@@ -1,3 +1,6 @@
+import { db } from "./firebase.js";
+
+console.log("Firebase connected:", db);
 const fileInput = document.querySelector("#fileInput");
 const statusEl = document.querySelector("#status");
 const controlsEl = document.querySelector("#controls");
