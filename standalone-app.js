@@ -323,6 +323,145 @@ function promptForUploaderName() {
   return name || null;
 }
 
+// ================= QA calendar (Sampling Date vs Upload Date) =================
+// Sampling Date is the business day the tickets actually belong to - always
+// the previous business day relative to whatever day the file is uploaded
+// (Mon upload -> Fri sample, Tue..Fri upload -> the day before). The user
+// still picks it explicitly (a suggested default, not a silent guess), but
+// this is what pre-fills that picker.
+function dateKeyToDate(dateKey) {
+  return new Date(`${dateKey}T00:00:00`);
+}
+
+function dateToKey(date) {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function addDaysToKey(dateKey, days) {
+  const date = dateKeyToDate(dateKey);
+  date.setDate(date.getDate() + days);
+  return dateToKey(date);
+}
+
+function isWeekendKey(dateKey) {
+  const day = dateKeyToDate(dateKey).getDay();
+  return day === 0 || day === 6;
+}
+
+function computeDefaultSamplingDate(referenceDateKey) {
+  const day = dateKeyToDate(referenceDateKey).getDay(); // 0 Sun .. 6 Sat
+  const stepBack = day === 1 ? 3 : day === 0 ? 2 : day === 6 ? 1 : 1;
+  return addDaysToKey(referenceDateKey, -stepBack);
+}
+
+function getMondayKey(dateKey) {
+  const date = dateKeyToDate(dateKey);
+  const day = date.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  return addDaysToKey(dateKey, diff);
+}
+
+// "Week 1" of a month is whichever Monday-starting week contains the 1st of
+// that month, numbered forward from there - matches how QA teams usually
+// talk about "week 2 of August" regardless of which weekday the 1st falls on.
+function computeQaWeekNumber(samplingDateKey) {
+  const monday = getMondayKey(samplingDateKey);
+  const [year, month] = samplingDateKey.split("-").map(Number);
+  const firstOfMonth = `${year}-${String(month).padStart(2, "0")}-01`;
+  const firstMonday = getMondayKey(firstOfMonth);
+  const diffDays = Math.round((dateKeyToDate(monday) - dateKeyToDate(firstMonday)) / 86400000);
+  return Math.floor(diffDays / 7) + 1;
+}
+
+function computeQaMonthKey(samplingDateKey) {
+  return samplingDateKey.slice(0, 7); // "YYYY-MM"
+}
+
+function formatMonthLabel(monthKey) {
+  const [year, month] = monthKey.split("-").map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+}
+
+function formatWeekdayLabel(dateKey) {
+  return dateKeyToDate(dateKey).toLocaleDateString(undefined, { weekday: "long" });
+}
+
+// ================= Worksheet Library (Sampling-Date-keyed archive) =================
+// One official worksheet per Sampling Date, forever (well - MAX_LIBRARY_MONTHS
+// worth). Storage shape (localStorage key "worksheetLibraryV1"):
+//   { "2026-08-10": { samplingDate, uploadDate, uploadedAt, uploader,
+//       workbookName, ticketCount, eligibleTicketCount, fingerprint,
+//       qaWeek, qaMonth, auditorAssignmentSnapshot, activeStatusSnapshot,
+//       payload } }
+const WORKSHEET_LIBRARY_KEY = "worksheetLibraryV1";
+const MAX_LIBRARY_MONTHS = 3;
+
+function loadWorksheetLibrary() {
+  try {
+    const data = JSON.parse(localStorage.getItem(WORKSHEET_LIBRARY_KEY) || "null");
+    return data && typeof data === "object" ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+let worksheetLibrary = loadWorksheetLibrary();
+
+function saveWorksheetLibrary() {
+  // Keep at least 3 months, oldest-first pruning only once we're past that.
+  const monthsPresent = [...new Set(Object.keys(worksheetLibrary).map(computeQaMonthKey))].sort();
+  if (monthsPresent.length > MAX_LIBRARY_MONTHS) {
+    const keepMonths = new Set(monthsPresent.slice(-MAX_LIBRARY_MONTHS));
+    for (const dateKey of Object.keys(worksheetLibrary)) {
+      if (!keepMonths.has(computeQaMonthKey(dateKey))) delete worksheetLibrary[dateKey];
+    }
+  }
+  try {
+    localStorage.setItem(WORKSHEET_LIBRARY_KEY, JSON.stringify(worksheetLibrary));
+  } catch (error) {
+    statusEl.textContent = "Worksheet saved for this session, but local storage is full - older worksheets may need clearing.";
+  }
+}
+
+// One-time migration: Phase 2A stored a single "officialWorksheetV1" pointer
+// with no Sampling Date concept. Fold it into the library (keyed by its best
+// guess at a Sampling Date) so nobody's existing today's-upload disappears.
+(function migrateLegacyOfficialWorksheet() {
+  if (!officialWorksheet || !officialWorksheet.payload) return;
+  const samplingDate = computeDefaultSamplingDate(officialWorksheet.date || todayDateKey());
+  if (worksheetLibrary[samplingDate]) return; // library already has something newer for that day
+  worksheetLibrary[samplingDate] = {
+    samplingDate,
+    uploadDate: officialWorksheet.date,
+    uploadedAt: officialWorksheet.uploadedAt,
+    uploader: officialWorksheet.uploaderName,
+    workbookName: officialWorksheet.workbookName,
+    ticketCount: officialWorksheet.ticketCount,
+    eligibleTicketCount: officialWorksheet.ticketCount,
+    fingerprint: officialWorksheet.fingerprint,
+    qaWeek: computeQaWeekNumber(samplingDate),
+    qaMonth: computeQaMonthKey(samplingDate),
+    auditorAssignmentSnapshot: { ...agentAssignments },
+    activeStatusSnapshot: { ...agentStatus },
+    payload: officialWorksheet.payload,
+  };
+  saveWorksheetLibrary();
+})();
+
+function countEligibleTickets(payload) {
+  return payload.agents.reduce(
+    (sum, agent) => sum + agent.tickets.filter((ticket) => !ticket.isMergedChild && isAgentActive(agent.agent)).length,
+    0,
+  );
+}
+
+function getOfficialWorksheetFor(samplingDateKey) {
+  return worksheetLibrary[samplingDateKey] || null;
+}
+
 function formatWorksheetDateLabel(dateKey) {
   const date = new Date(`${dateKey}T00:00:00`);
   if (Number.isNaN(date.getTime())) return dateKey;
@@ -335,19 +474,23 @@ function formatWorksheetTimeLabel(iso) {
   return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
+let viewingHistorical = null; // { samplingDate } | null - set while browsing the library read-only
+
 function renderTodayCard() {
   const el = document.querySelector("#todayCard");
   if (!el) return;
-  const isToday = officialWorksheet && officialWorksheet.date === todayDateKey();
+  const todaySamplingDate = computeDefaultSamplingDate(todayDateKey());
+  const record = getOfficialWorksheetFor(todaySamplingDate);
 
-  if (!isToday) {
+  if (!record) {
     el.innerHTML = `
       <div class="today-card-info">
-        <strong>No worksheet has been uploaded today.</strong>
-        <span>Upload today's worksheet to begin sampling.</span>
+        <strong>No official worksheet for ${escapeHtml(formatWeekdayLabel(todaySamplingDate))} Sample yet.</strong>
+        <span>Upload the worksheet to begin sampling.</span>
       </div>
       <div class="today-card-actions">
-        <button type="button" class="primary-action" data-upload-new>Upload today's worksheet</button>
+        <button type="button" class="primary-action" data-upload-new>Upload Worksheet</button>
+        <button type="button" class="ops-action-inline" data-open-library>Worksheet Library</button>
       </div>
     `;
     return;
@@ -355,19 +498,47 @@ function renderTodayCard() {
 
   el.innerHTML = `
     <div class="today-card-info">
-      <strong>Today's Official Worksheet</strong>
-      <span>${escapeHtml(formatWorksheetDateLabel(officialWorksheet.date))}</span>
-      <span>${officialWorksheet.uploaderName ? `Uploaded by ${escapeHtml(officialWorksheet.uploaderName)}` : "Uploaded"} &middot; ${officialWorksheet.ticketCount} tickets &middot; ${escapeHtml(formatWorksheetTimeLabel(officialWorksheet.uploadedAt))}</span>
+      <strong>Today's Official Sample</strong>
+      <span>${escapeHtml(formatWeekdayLabel(record.samplingDate))} Sample</span>
+      <span>Sampling Date: ${escapeHtml(formatWorksheetDateLabel(record.samplingDate))}</span>
+      <span>Uploaded: ${escapeHtml(formatWorksheetDateLabel(record.uploadDate))} &middot; ${escapeHtml(formatWorksheetTimeLabel(record.uploadedAt))}</span>
+      <span>${record.uploader ? `Uploader: ${escapeHtml(record.uploader)}` : "Uploader: Unknown"} &middot; ${record.ticketCount} tickets</span>
     </div>
     <div class="today-card-actions">
       <button type="button" class="primary-action" data-open-today>Open Today's Sample</button>
-      <button type="button" class="ops-action-inline" data-upload-new>Upload New Worksheet</button>
+      <button type="button" class="ops-action-inline" data-open-library>Worksheet Library</button>
+      <button type="button" class="ops-action-inline small" data-upload-new>Upload Worksheet</button>
     </div>
   `;
 }
 
-// Shared by "fresh upload", "Open Today's Sample", and "Keep Existing" - the
-// only three ways a payload ever becomes the active dataset.
+function renderHistoricalBanner() {
+  const el = document.querySelector("#sessionBanner");
+  if (!el) return;
+  if (!viewingHistorical) {
+    el.innerHTML = "";
+    return;
+  }
+  const record = getOfficialWorksheetFor(viewingHistorical.samplingDate);
+  if (!record) {
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = `
+    <div class="session-banner">
+      <div>
+        <strong>Viewing Historical Worksheet</strong>
+        <span>${escapeHtml(formatWeekdayLabel(record.samplingDate))} Sample &middot; ${escapeHtml(formatWorksheetDateLabel(record.samplingDate))} &middot; Week ${record.qaWeek}</span>
+      </div>
+      <div class="session-banner-actions">
+        <button type="button" class="ops-action-inline" data-exit-historical>Back to Today's Sample</button>
+      </div>
+    </div>
+  `;
+}
+
+// Shared by "fresh upload", "Open Today's Sample", historical browsing, and
+// "Keep Existing" - the only ways a payload ever becomes the active dataset.
 function activatePayload(payload, statusText) {
   currentPayload = payload;
   reassignCurrentPayloadAuditors(); // picks up any assignment/status changes since this was stored
@@ -384,24 +555,105 @@ function activatePayload(payload, statusText) {
   render();
 }
 
-function openReplaceWorksheetModal() {
+function openHistoricalWorksheet(samplingDateKey) {
+  const record = getOfficialWorksheetFor(samplingDateKey);
+  if (!record) return;
+  viewingHistorical = { samplingDate: samplingDateKey };
+  activatePayload(record.payload, `Viewing historical worksheet (read-only) - ${formatWeekdayLabel(samplingDateKey)} Sample.`);
+  renderHistoricalBanner();
+  closeOpsModal();
+}
+
+function exitHistoricalView() {
+  viewingHistorical = null;
+  const todaySamplingDate = computeDefaultSamplingDate(todayDateKey());
+  const record = getOfficialWorksheetFor(todaySamplingDate);
+  if (record) {
+    activatePayload(record.payload, "Back to today's official sample.");
+  } else {
+    currentPayload = null;
+    controlsEl.hidden = true;
+    auditorTabsEl.hidden = true;
+    summaryEl.innerHTML = "";
+    metricsEl.innerHTML = "";
+    resultsEl.innerHTML = "";
+    statusEl.textContent = "No official worksheet for today yet.";
+  }
+  renderHistoricalBanner();
+}
+
+// Confirms a Sampling Date for a freshly-parsed upload before it's saved.
+// Defaults to the previous business day but lets the uploader override it,
+// and refuses weekend dates outright (non-sampling days).
+function openSamplingDateModal(defaultDateKey) {
+  return new Promise((resolve) => {
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.dataset.samplingDateModal = "true";
+    modal.innerHTML = `
+      <section class="metric-modal" role="dialog" aria-modal="true" aria-label="Select Sampling Date">
+        <header>
+          <div>
+            <strong>Select Sampling Date</strong>
+            <span>Which business day do these tickets belong to?</span>
+          </div>
+        </header>
+        <div class="modal-table-wrap">
+          <input type="date" class="ops-input" data-sampling-date-input value="${escapeHtml(defaultDateKey)}" />
+          <p class="sampling-date-weekday" data-sampling-date-weekday>${escapeHtml(formatWeekdayLabel(defaultDateKey))} Sample</p>
+          <p class="sampling-date-warning" data-sampling-date-warning hidden>Saturday and Sunday are not sampling days - pick a weekday.</p>
+        </div>
+        <div class="assign-actions">
+          <button type="button" class="primary-action" data-confirm-sampling-date>Continue</button>
+          <button type="button" class="reject-btn" data-cancel-sampling-date>Cancel</button>
+        </div>
+      </section>
+    `;
+    document.body.appendChild(modal);
+    const input = modal.querySelector("[data-sampling-date-input]");
+    const weekdayLabel = modal.querySelector("[data-sampling-date-weekday]");
+    const warning = modal.querySelector("[data-sampling-date-warning]");
+    const confirmBtn = modal.querySelector("[data-confirm-sampling-date]");
+
+    const refresh = () => {
+      const key = input.value;
+      const valid = /^\d{4}-\d{2}-\d{2}$/.test(key);
+      const weekend = valid && isWeekendKey(key);
+      weekdayLabel.textContent = valid ? `${formatWeekdayLabel(key)} Sample` : "";
+      warning.hidden = !weekend;
+      confirmBtn.disabled = !valid || weekend;
+    };
+    input.addEventListener("input", refresh);
+    refresh();
+
+    confirmBtn.addEventListener("click", () => {
+      if (confirmBtn.disabled) return;
+      modal.remove();
+      resolve(input.value);
+    });
+    modal.querySelector("[data-cancel-sampling-date]").addEventListener("click", () => {
+      modal.remove();
+      resolve(null);
+    });
+  });
+}
+
+// Only shown when a worksheet already exists for the chosen Sampling Date.
+function openWorksheetConflictModal(samplingDateKey) {
   return new Promise((resolve) => {
     const modal = document.createElement("div");
     modal.className = "modal-backdrop";
     modal.dataset.duplicateModal = "true";
     modal.innerHTML = `
-      <section class="metric-modal" role="dialog" aria-modal="true" aria-label="Today's worksheet already exists">
+      <section class="metric-modal" role="dialog" aria-modal="true" aria-label="Worksheet already exists">
         <header>
           <div>
-            <strong>Today's worksheet already exists.</strong>
+            <strong>An official worksheet already exists for ${escapeHtml(formatWorksheetDateLabel(samplingDateKey))}.</strong>
           </div>
         </header>
-        <div class="modal-table-wrap">
-          <p class="duplicate-worksheet-message">An official worksheet for today has already been uploaded. Uploading another workbook will replace the current official worksheet.</p>
-        </div>
         <div class="assign-actions">
-          <button type="button" class="primary-action" data-replace-worksheet>Replace Today's Worksheet</button>
-          <button type="button" class="reject-btn" data-keep-worksheet>Keep Existing Worksheet</button>
+          <button type="button" class="primary-action" data-replace-worksheet>Replace Official Worksheet</button>
+          <button type="button" class="reject-btn" data-keep-worksheet>Cancel</button>
         </div>
       </section>
     `;
@@ -412,9 +664,126 @@ function openReplaceWorksheetModal() {
     });
     modal.querySelector("[data-keep-worksheet]").addEventListener("click", () => {
       modal.remove();
-      resolve("keep");
+      resolve("cancel");
     });
   });
+}
+
+
+let libraryVisibleMonth = computeQaMonthKey(computeDefaultSamplingDate(todayDateKey()));
+
+function shiftMonthKey(monthKey, delta) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const date = new Date(year, month - 1 + delta, 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getBusinessDaysInMonth(monthKey) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const days = [];
+  const date = new Date(year, month - 1, 1);
+  while (date.getMonth() === month - 1) {
+    const key = dateToKey(date);
+    if (!isWeekendKey(key)) days.push(key);
+    date.setDate(date.getDate() + 1);
+  }
+  return days;
+}
+
+function openWorksheetLibraryModal() {
+  libraryVisibleMonth = computeQaMonthKey(computeDefaultSamplingDate(todayDateKey()));
+  openOpsModal(
+    "Worksheet Library",
+    "Permanent archive of official worksheets, organized by Sampling Date.",
+    renderWorksheetLibraryPanel(),
+  );
+}
+
+function refreshWorksheetLibraryModal() {
+  const body = document.querySelector(".ops-panel-body");
+  if (body) body.innerHTML = renderWorksheetLibraryPanel();
+}
+
+function renderWorksheetLibraryPanel() {
+  const monthKey = libraryVisibleMonth;
+  const businessDays = getBusinessDaysInMonth(monthKey);
+  const todaySamplingDate = computeDefaultSamplingDate(todayDateKey());
+  const todayMonth = computeQaMonthKey(todaySamplingDate);
+
+  const weeks = new Map();
+  for (const dateKey of businessDays) {
+    const week = computeQaWeekNumber(dateKey);
+    if (!weeks.has(week)) weeks.set(week, []);
+    weeks.get(week).push(dateKey);
+  }
+
+  // Only business days up to "today's" sampling reference count toward
+  // readiness/missing-day detection - future weekdays just haven't happened
+  // yet, they're not "missing".
+  const isFutureMonth = monthKey > todayMonth;
+  const countableDays = isFutureMonth ? [] : monthKey === todayMonth ? businessDays.filter((d) => d <= todaySamplingDate) : businessDays;
+  const countableSet = new Set(countableDays);
+  const uploadedCountableDays = countableDays.filter((d) => worksheetLibrary[d]);
+  const readinessPct = countableDays.length ? Math.round((uploadedCountableDays.length / countableDays.length) * 100) : 0;
+
+  const weekSections = [...weeks.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([weekNumber, days]) => {
+      const weekCountable = days.filter((d) => countableSet.has(d));
+      const weekUploaded = weekCountable.filter((d) => worksheetLibrary[d]);
+      const weekPct = weekCountable.length ? Math.round((weekUploaded.length / weekCountable.length) * 100) : null;
+
+      const dayCards = days
+        .map((dateKey) => {
+          const record = worksheetLibrary[dateKey];
+          const weekday = formatWeekdayLabel(dateKey);
+          if (record) {
+            return `
+              <button type="button" class="worksheet-day-card has-data" data-open-historical="${dateKey}">
+                <strong>${escapeHtml(weekday)} Sample &#10003;</strong>
+                <span>Sampling Date: ${escapeHtml(formatWorksheetDateLabel(dateKey))}</span>
+                <span>Uploaded: ${escapeHtml(formatWorksheetDateLabel(record.uploadDate))} &middot; ${escapeHtml(formatWorksheetTimeLabel(record.uploadedAt))}</span>
+                <span>${record.uploader ? `Uploader: ${escapeHtml(record.uploader)}` : "Uploader: Unknown"} &middot; ${record.ticketCount} tickets</span>
+              </button>
+            `;
+          }
+          const isMissing = countableSet.has(dateKey);
+          return `
+            <div class="worksheet-day-card ${isMissing ? "missing" : "future"}">
+              <strong>${escapeHtml(weekday)} Sample${isMissing ? " &#10007;" : ""}</strong>
+              <span>${isMissing ? `${escapeHtml(weekday)} Sample has not been uploaded.` : "Not due yet"}</span>
+            </div>
+          `;
+        })
+        .join("");
+
+      return `
+        <section class="worksheet-week">
+          <header>
+            <strong>Week ${weekNumber}</strong>
+            ${weekPct !== null ? `<span>${weekUploaded.length}/${weekCountable.length} uploaded &middot; ${weekPct}% complete</span>` : ""}
+          </header>
+          <div class="worksheet-week-days">${dayCards}</div>
+        </section>
+      `;
+    })
+    .join("");
+
+  return `
+    <div class="worksheet-library-nav">
+      <button type="button" class="ops-action-inline" data-library-prev-month>&larr; Prev</button>
+      <strong>${escapeHtml(formatMonthLabel(monthKey))}</strong>
+      <button type="button" class="ops-action-inline" data-library-next-month>Next &rarr;</button>
+    </div>
+    <div class="worksheet-library-readiness">
+      ${
+        countableDays.length
+          ? `${uploadedCountableDays.length} of ${countableDays.length} sampling days available &middot; ${readinessPct}% complete`
+          : "No sampling days due yet this month."
+      }
+    </div>
+    <div class="worksheet-library-weeks">${weekSections || `<div class="empty">No business days in this month.</div>`}</div>
+  `;
 }
 
 function openAssignAgentsModal() {
@@ -781,36 +1150,51 @@ async function analyzeSelectedFile(file) {
     const buffer = await readUploadedWorkbook(file);
     const payload = await analyzeWorkbook(buffer);
     const meta = computeWorkbookFingerprint(payload);
-    const todayKey = todayDateKey();
+    const uploadDateKey = todayDateKey();
 
-    // Duplicate detection: today's slot already has an official worksheet -
-    // ask before silently overwriting it. First upload of the day skips
-    // straight through (nothing to conflict with yet).
-    if (officialWorksheet && officialWorksheet.date === todayKey) {
-      const decision = await openReplaceWorksheetModal();
-      if (decision === "keep") {
-        activatePayload(officialWorksheet.payload, "Kept the existing official worksheet - no changes made.");
+    // The user picks Sampling Date explicitly (defaulted to the previous
+    // business day) - everything else about the record is automatic.
+    const defaultSamplingDate = computeDefaultSamplingDate(uploadDateKey);
+    const samplingDateKey = await openSamplingDateModal(defaultSamplingDate);
+    if (!samplingDateKey) {
+      statusEl.textContent = "Upload cancelled - no changes made.";
+      renderTodayCard();
+      return;
+    }
+
+    // One official worksheet per Sampling Date - ask before overwriting.
+    if (worksheetLibrary[samplingDateKey]) {
+      const decision = await openWorksheetConflictModal(samplingDateKey);
+      if (decision !== "replace") {
+        statusEl.textContent = "Upload cancelled - kept the existing official worksheet.";
+        renderTodayCard();
         return;
       }
     }
 
     const uploaderName = promptForUploaderName();
-    officialWorksheet = {
-      fingerprint: meta.fingerprint,
-      date: todayKey,
-      workbookDate: meta.workbookDate,
+    const record = {
+      samplingDate: samplingDateKey,
+      uploadDate: uploadDateKey,
       uploadedAt: new Date().toISOString(),
-      uploaderName,
+      uploader: uploaderName,
       workbookName: file.name,
       ticketCount: meta.ticketCount,
-      firstTicketId: meta.firstTicketId,
-      lastTicketId: meta.lastTicketId,
+      eligibleTicketCount: countEligibleTickets(payload),
+      fingerprint: meta.fingerprint,
+      qaWeek: computeQaWeekNumber(samplingDateKey),
+      qaMonth: computeQaMonthKey(samplingDateKey),
+      auditorAssignmentSnapshot: { ...agentAssignments },
+      activeStatusSnapshot: { ...agentStatus },
       payload,
     };
-    saveOfficialWorksheet(officialWorksheet);
+    worksheetLibrary[samplingDateKey] = record;
+    saveWorksheetLibrary();
     savePayloadToHistory(payload, file.name);
-    activatePayload(payload, "Done. This N-1 file is stored locally for monthly agent trends.");
+    viewingHistorical = null;
+    activatePayload(payload, `Done. ${formatWeekdayLabel(samplingDateKey)} Sample saved as the official worksheet.`);
     renderTodayCard();
+    renderHistoricalBanner();
   } catch (error) {
     statusEl.textContent = `Could not analyze workbook: ${getFriendlyFileError(error)}`;
   }
@@ -886,13 +1270,50 @@ copyIdealBtn.addEventListener("click", async () => {
 document.addEventListener("click", async (event) => {
   const openToday = event.target.closest("[data-open-today]");
   if (openToday) {
-    if (officialWorksheet) activatePayload(officialWorksheet.payload, "Showing today's official worksheet.");
+    const record = getOfficialWorksheetFor(computeDefaultSamplingDate(todayDateKey()));
+    if (record) {
+      viewingHistorical = null;
+      activatePayload(record.payload, "Showing today's official sample.");
+      renderHistoricalBanner();
+    }
     return;
   }
 
   const uploadNew = event.target.closest("[data-upload-new]");
   if (uploadNew) {
     fileInput.click();
+    return;
+  }
+
+  const openLibrary = event.target.closest("[data-open-library]");
+  if (openLibrary) {
+    openWorksheetLibraryModal();
+    return;
+  }
+
+  const exitHistorical = event.target.closest("[data-exit-historical]");
+  if (exitHistorical) {
+    exitHistoricalView();
+    return;
+  }
+
+  const openHistorical = event.target.closest("[data-open-historical]");
+  if (openHistorical) {
+    openHistoricalWorksheet(openHistorical.dataset.openHistorical);
+    return;
+  }
+
+  const libraryMonthPrev = event.target.closest("[data-library-prev-month]");
+  if (libraryMonthPrev) {
+    libraryVisibleMonth = shiftMonthKey(libraryVisibleMonth, -1);
+    refreshWorksheetLibraryModal();
+    return;
+  }
+
+  const libraryMonthNext = event.target.closest("[data-library-next-month]");
+  if (libraryMonthNext) {
+    libraryVisibleMonth = shiftMonthKey(libraryVisibleMonth, 1);
+    refreshWorksheetLibraryModal();
     return;
   }
 
