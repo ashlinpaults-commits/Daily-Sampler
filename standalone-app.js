@@ -1,7 +1,8 @@
-const AUDITORS = [
+const DEFAULT_AUDITORS = [
   {
     name: "Ashlin Paul",
     agents: [
+      "Adheena I Sivan",
       "Goutham J",
       "Karthik Rajimon",
       "Kaushik K",
@@ -15,15 +16,7 @@ const AUDITORS = [
   },
   {
     name: "Abhijith Bharathan",
-    agents: [
-      "Akshaya N",
-      "Leah Suzanne Punnoose",
-      "Muhammed Bazil S",
-      "Nitesh Raj",
-      "Zon Paul",
-      "Akash Anil",
-      "Mili Sara Thomas",
-    ],
+    agents: ["Akshaya N", "Leah Suzanne Punnoose", "Muhammed Bazil S", "Nitesh Raj", "Zon Paul", "Akash Anil", "Mili Sara Thomas"],
   },
   {
     name: "Manoj M",
@@ -33,6 +26,7 @@ const AUDITORS = [
       "Anandu Somaraj",
       "Bhadra R",
       "Peter Anil Mathew",
+      "Presanth B",
       "Surya Dev S. B.",
       "Swathi Krishna S. A.",
       "Swetha U Krishnan",
@@ -42,7 +36,6 @@ const AUDITORS = [
   {
     name: "Midhun Mohan",
     agents: [
-      "Adheena I Sivan",
       "Abinitha E A",
       "Adithya Chandran",
       "Aleena Jose",
@@ -50,7 +43,6 @@ const AUDITORS = [
       "Antony Neval Remalo",
       "Ganga Gopan",
       "Noel Stephen",
-      "Presanth B",
       "Subin Suresh",
       "Theertha S Ajay",
       "Tina Jose",
@@ -59,17 +51,549 @@ const AUDITORS = [
   },
 ];
 
-const TARGET_AGENTS = AUDITORS.flatMap((auditor) => auditor.agents);
-const AGENT_LOOKUP = Object.fromEntries(TARGET_AGENTS.map((agent) => [normalizeName(agent), agent]));
+// Master roster of valid agent names, in default grouping order. This never
+// changes - what CAN change (via the Assign Agents panel) is which auditor
+// each of these names currently reports to.
+const AGENT_ROSTER = DEFAULT_AUDITORS.flatMap((auditor) => auditor.agents);
+const AUDITOR_NAMES = DEFAULT_AUDITORS.map((auditor) => auditor.name);
+
+function loadAgentAssignments() {
+  const assignments = {};
+  for (const auditor of DEFAULT_AUDITORS) {
+    for (const agent of auditor.agents) assignments[agent] = auditor.name;
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem("agentAssignmentsV1") || "null");
+    if (saved && typeof saved === "object") {
+      const validAuditors = new Set(AUDITOR_NAMES);
+      // Overlay every saved key, not just ones already in the default roster,
+      // so agents added later (e.g. via Excel import) survive a reload.
+      for (const [agent, auditor] of Object.entries(saved)) {
+        if (agent && validAuditors.has(auditor)) assignments[agent] = auditor;
+      }
+    }
+  } catch {
+    // Corrupt/old storage - fall back to the defaults already set above.
+  }
+  return assignments;
+}
+
+let agentAssignments = loadAgentAssignments();
+
+function buildAuditorsFromAssignments() {
+  // Roster is whatever's currently in the assignment map, not the fixed
+  // DEFAULT_AUDITORS list - this is what lets brand-new agent names (from
+  // an Excel import) show up without a code change.
+  return AUDITOR_NAMES.map((name) => ({
+    name,
+    agents: Object.keys(agentAssignments)
+      .filter((agent) => agentAssignments[agent] === name)
+      .sort((a, b) => a.localeCompare(b)),
+  }));
+}
+
+function recomputeAgentAuditorMaps() {
+  AUDITORS = buildAuditorsFromAssignments();
+  TARGET_AGENTS = AUDITORS.flatMap((auditor) => auditor.agents);
+  AGENT_LOOKUP = Object.fromEntries(TARGET_AGENTS.map((agent) => [normalizeName(agent), agent]));
+  AGENT_TO_AUDITOR = Object.fromEntries(AUDITORS.flatMap((auditor) => auditor.agents.map((agent) => [agent, auditor.name])));
+}
+
+let AUDITORS = buildAuditorsFromAssignments();
+let TARGET_AGENTS = AUDITORS.flatMap((auditor) => auditor.agents);
+let AGENT_LOOKUP = Object.fromEntries(TARGET_AGENTS.map((agent) => [normalizeName(agent), agent]));
 const AGENT_ALIASES = {
   [normalizeName("Anandu S")]: "Anandu Somaraj",
   [normalizeName("Abijith Vijay")]: "Abhijith Vijay",
   [normalizeName("Shwetha U Krishnan")]: "Swetha U Krishnan",
   [normalizeName("Swetha Krishnan")]: "Swetha U Krishnan",
 };
-const AGENT_TO_AUDITOR = Object.fromEntries(
-  AUDITORS.flatMap((auditor) => auditor.agents.map((agent) => [agent, auditor.name])),
-);
+let AGENT_TO_AUDITOR = Object.fromEntries(AUDITORS.flatMap((auditor) => auditor.agents.map((agent) => [agent, auditor.name])));
+
+// ================= Lightweight assignment history =================
+// Deliberately minimal - last 20 changes only, no undo, no draft state.
+// Storage shape (localStorage key "assignmentHistoryV1"), newest first:
+//   [{ id, timestamp, agent, from, to, action }]
+// action is one of "Reassigned" | "Marked Inactive" | "Reactivated".
+function loadAssignmentHistory() {
+  try {
+    const items = JSON.parse(localStorage.getItem("assignmentHistoryV1") || "[]");
+    return Array.isArray(items) ? items : [];
+  } catch {
+    return [];
+  }
+}
+
+let assignmentHistory = loadAssignmentHistory();
+
+function saveAssignmentHistory() {
+  assignmentHistory = assignmentHistory.slice(0, 20);
+  localStorage.setItem("assignmentHistoryV1", JSON.stringify(assignmentHistory));
+}
+
+function logAssignmentHistory(entry) {
+  assignmentHistory.unshift({
+    id: `h_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    timestamp: new Date().toISOString(),
+    ...entry,
+  });
+  saveAssignmentHistory();
+}
+
+function saveAgentAssignments() {
+  localStorage.setItem("agentAssignmentsV1", JSON.stringify(agentAssignments));
+}
+
+// Applies a full agent->auditor map: persists it, rebuilds the AUDITORS
+// family of lookups, patches any already-analyzed payload in place (so an
+// uploaded file doesn't need re-uploading), and refreshes the UI.
+function commitAgentAssignments(newAssignments) {
+  const previous = agentAssignments;
+  for (const agent of Object.keys(newAssignments)) {
+    if (previous[agent] && previous[agent] !== newAssignments[agent]) {
+      logAssignmentHistory({ agent, from: previous[agent], to: newAssignments[agent], action: "Reassigned" });
+    }
+  }
+  agentAssignments = newAssignments;
+  saveAgentAssignments();
+  recomputeAgentAuditorMaps();
+  reassignCurrentPayloadAuditors();
+  if (!AUDITORS.some((auditor) => auditor.name === activeAuditor)) {
+    activeAuditor = AUDITORS[0]?.name || null;
+  }
+  renderAuditorTabs();
+  render();
+}
+
+// currentPayload.agents/tickets already carry a baked-in `auditor` field
+// from when the workbook was analyzed. Reassigning agents afterwards needs
+// those fields patched too, or the tabs would show stale groupings.
+function reassignCurrentPayloadAuditors() {
+  if (!currentPayload) return;
+  for (const agentGroup of currentPayload.agents) {
+    const newAuditor = AGENT_TO_AUDITOR[agentGroup.agent];
+    agentGroup.auditor = newAuditor;
+    for (const ticket of agentGroup.tickets) ticket.auditor = newAuditor;
+  }
+}
+
+function resetAgentAssignments() {
+  const defaults = {};
+  for (const auditor of DEFAULT_AUDITORS) {
+    for (const agent of auditor.agents) defaults[agent] = auditor.name;
+  }
+  commitAgentAssignments(defaults);
+}
+
+// ================= Agent status (Active / Inactive) =================
+// Forward-looking exclusion only: an Inactive agent is skipped by
+// getActiveAgents() (the single choke point every sampling/metrics/ranking
+// view already reads through), so they immediately stop showing up in
+// future recommendations, eligible counts, and workload numbers - without
+// touching currentPayload, ticketHistory, or any already-stored data.
+// Historical ticket ownership and worksheet data are never modified.
+//
+// Storage shape (localStorage key "agentStatusV1"):
+//   { "Agent Name": "Inactive", ... }
+// Active is the default and is never written - only exceptions are stored,
+// so any agent missing from this map is Active automatically (including
+// brand-new agents added later).
+function loadAgentStatus() {
+  const status = {};
+  try {
+    const saved = JSON.parse(localStorage.getItem("agentStatusV1") || "null");
+    if (saved && typeof saved === "object") {
+      for (const [agent, value] of Object.entries(saved)) {
+        if (agent && value === "Inactive") status[agent] = "Inactive";
+      }
+    }
+  } catch {
+    // Corrupt/old storage - everyone defaults to Active.
+  }
+  return status;
+}
+
+let agentStatus = loadAgentStatus();
+
+function saveAgentStatus() {
+  localStorage.setItem("agentStatusV1", JSON.stringify(agentStatus));
+}
+
+// Only "Active" and "Inactive" are implemented this phase, but reading
+// through this getter (rather than the raw map) keeps the door open for
+// future statuses like "On Leave" or "Training" without touching callers.
+function getAgentStatus(agent) {
+  return agentStatus[agent] === "Inactive" ? "Inactive" : "Active";
+}
+
+function isAgentActive(agent) {
+  return getAgentStatus(agent) !== "Inactive";
+}
+
+function setAgentStatus(agent, status) {
+  const wasInactive = agentStatus[agent] === "Inactive";
+  const auditor = agentAssignments[agent] || "-";
+  if (status === "Inactive" && !wasInactive) {
+    logAssignmentHistory({ agent, from: auditor, to: auditor, action: "Marked Inactive" });
+  } else if (status !== "Inactive" && wasInactive) {
+    logAssignmentHistory({ agent, from: auditor, to: auditor, action: "Reactivated" });
+  }
+  if (status === "Inactive") agentStatus[agent] = "Inactive";
+  else delete agentStatus[agent];
+  saveAgentStatus();
+  renderAuditorTabs();
+  render();
+}
+
+// ================= Today's Official Worksheet (Phase 2A) =================
+// Local-only for now, by design: "Design the structure so it can later move
+// to shared storage" - the shape below (metadata + full analyzed payload)
+// is what a future shared backend would just replicate, so nothing here
+// needs to change when that lands. Not a real multi-user share yet since
+// localStorage is per-browser.
+const OFFICIAL_WORKSHEET_KEY = "officialWorksheetV1";
+
+function loadOfficialWorksheet() {
+  try {
+    const data = JSON.parse(localStorage.getItem(OFFICIAL_WORKSHEET_KEY) || "null");
+    return data && typeof data === "object" && data.payload ? data : null;
+  } catch {
+    return null;
+  }
+}
+
+let officialWorksheet = loadOfficialWorksheet();
+
+function saveOfficialWorksheet(entry) {
+  localStorage.setItem(OFFICIAL_WORKSHEET_KEY, JSON.stringify(entry));
+}
+
+function todayDateKey() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// Not for security - just a deterministic, order-independent way to compare
+// two uploads. Same inputs always produce the same output.
+function simpleHash(text) {
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+  }
+  return hash.toString(16);
+}
+
+function mostCommonValue(values) {
+  const counts = new Map();
+  for (const value of values) {
+    if (!value) continue;
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+  let best = null;
+  let bestCount = 0;
+  for (const [value, count] of counts.entries()) {
+    if (count > bestCount) {
+      best = value;
+      bestCount = count;
+    }
+  }
+  return best;
+}
+
+// Fingerprint per spec: ticket IDs + total count + workbook date + first/last
+// ticket ID, all folded into one deterministic hash for comparison.
+function computeWorkbookFingerprint(payload) {
+  const allTickets = payload.agents.flatMap((agent) => agent.tickets);
+  const ids = [...new Set(allTickets.map((ticket) => clean(ticket.ticketId)).filter(Boolean))].sort();
+  const ticketCount = ids.length;
+  const firstTicketId = ids[0] || "";
+  const lastTicketId = ids[ids.length - 1] || "";
+  const workbookDate = mostCommonValue(allTickets.map((ticket) => ticket.date)) || "";
+  const raw = `${workbookDate}|${ticketCount}|${firstTicketId}|${lastTicketId}|${ids.join(",")}`;
+  return { fingerprint: simpleHash(raw), ticketCount, firstTicketId, lastTicketId, workbookDate };
+}
+
+function promptForUploaderName() {
+  const lastName = localStorage.getItem("lastUploaderNameV1") || "";
+  const name = clean(prompt("Your name (for the worksheet record, optional):", lastName));
+  if (name) localStorage.setItem("lastUploaderNameV1", name);
+  return name || null;
+}
+
+function formatWorksheetDateLabel(dateKey) {
+  const date = new Date(`${dateKey}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return dateKey;
+  return date.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short", year: "numeric" });
+}
+
+function formatWorksheetTimeLabel(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+function renderTodayCard() {
+  const el = document.querySelector("#todayCard");
+  if (!el) return;
+  const isToday = officialWorksheet && officialWorksheet.date === todayDateKey();
+
+  if (!isToday) {
+    el.innerHTML = `
+      <div class="today-card-info">
+        <strong>No worksheet has been uploaded today.</strong>
+        <span>Upload today's worksheet to begin sampling.</span>
+      </div>
+      <div class="today-card-actions">
+        <button type="button" class="primary-action" data-upload-new>Upload today's worksheet</button>
+      </div>
+    `;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="today-card-info">
+      <strong>Today's Official Worksheet</strong>
+      <span>${escapeHtml(formatWorksheetDateLabel(officialWorksheet.date))}</span>
+      <span>${officialWorksheet.uploaderName ? `Uploaded by ${escapeHtml(officialWorksheet.uploaderName)}` : "Uploaded"} &middot; ${officialWorksheet.ticketCount} tickets &middot; ${escapeHtml(formatWorksheetTimeLabel(officialWorksheet.uploadedAt))}</span>
+    </div>
+    <div class="today-card-actions">
+      <button type="button" class="primary-action" data-open-today>Open Today's Sample</button>
+      <button type="button" class="ops-action-inline" data-upload-new>Upload New Worksheet</button>
+    </div>
+  `;
+}
+
+// Shared by "fresh upload", "Open Today's Sample", and "Keep Existing" - the
+// only three ways a payload ever becomes the active dataset.
+function activatePayload(payload, statusText) {
+  currentPayload = payload;
+  reassignCurrentPayloadAuditors(); // picks up any assignment/status changes since this was stored
+  currentChannel = "All";
+  expandedAgent = null;
+  document.querySelectorAll("[data-channel]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.channel === "All");
+  });
+  controlsEl.hidden = false;
+  auditorTabsEl.hidden = false;
+  activeAuditor = AUDITORS[0]?.name || null;
+  renderAuditorTabs();
+  statusEl.textContent = statusText;
+  render();
+}
+
+function openReplaceWorksheetModal() {
+  return new Promise((resolve) => {
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.dataset.duplicateModal = "true";
+    modal.innerHTML = `
+      <section class="metric-modal" role="dialog" aria-modal="true" aria-label="Today's worksheet already exists">
+        <header>
+          <div>
+            <strong>Today's worksheet already exists.</strong>
+          </div>
+        </header>
+        <div class="modal-table-wrap">
+          <p class="duplicate-worksheet-message">An official worksheet for today has already been uploaded. Uploading another workbook will replace the current official worksheet.</p>
+        </div>
+        <div class="assign-actions">
+          <button type="button" class="primary-action" data-replace-worksheet>Replace Today's Worksheet</button>
+          <button type="button" class="reject-btn" data-keep-worksheet>Keep Existing Worksheet</button>
+        </div>
+      </section>
+    `;
+    document.body.appendChild(modal);
+    modal.querySelector("[data-replace-worksheet]").addEventListener("click", () => {
+      modal.remove();
+      resolve("replace");
+    });
+    modal.querySelector("[data-keep-worksheet]").addEventListener("click", () => {
+      modal.remove();
+      resolve("keep");
+    });
+  });
+}
+
+function openAssignAgentsModal() {
+  openOpsModal(
+    "Assign Agents",
+    "Move an agent to a different auditor, or mark them Active/Inactive. Saved on this device and applied immediately.",
+    renderAssignAgentsPanel(),
+  );
+}
+
+function refreshAssignAgentsPanel() {
+  const body = document.querySelector(".ops-panel-body");
+  if (body) body.innerHTML = renderAssignAgentsPanel();
+}
+
+function renderAgentAssignRow(agent) {
+  const currentAuditor = agentAssignments[agent];
+  const active = isAgentActive(agent);
+  const options = AUDITOR_NAMES.map(
+    (name) => `<option value="${escapeHtml(name)}" ${name === currentAuditor ? "selected" : ""}>${escapeHtml(name)}</option>`,
+  ).join("");
+  return `
+    <tr class="${active ? "" : "agent-row-inactive"}">
+      <td>
+        <span class="status-dot ${active ? "status-dot-active" : "status-dot-inactive"}" aria-hidden="true"></span>
+        ${escapeHtml(agent)}
+      </td>
+      <td>
+        <select class="ops-input assign-select" data-assign-agent="${escapeHtml(agent)}">
+          ${options}
+        </select>
+      </td>
+      <td>
+        ${
+          active
+            ? `<button type="button" class="ops-action-inline" data-mark-inactive="${escapeHtml(agent)}">Mark Inactive</button>`
+            : `<button type="button" class="ops-action-inline" data-reactivate="${escapeHtml(agent)}">Reactivate</button>`
+        }
+      </td>
+    </tr>
+  `;
+}
+
+function renderAssignAgentsPanel() {
+  const allAgents = Object.keys(agentAssignments).sort((a, b) => a.localeCompare(b));
+  const activeAgentsList = allAgents.filter((agent) => isAgentActive(agent));
+  const inactiveAgentsList = allAgents.filter((agent) => !isAgentActive(agent));
+
+  const activeRows = activeAgentsList.map(renderAgentAssignRow).join("");
+  const inactiveRows = inactiveAgentsList.map(renderAgentAssignRow).join("");
+
+  return `
+    <div class="modal-table-wrap assign-table">
+      <table>
+        <thead>
+          <tr>
+            <th>Agent</th>
+            <th>Auditor</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${activeRows}
+          ${
+            inactiveAgentsList.length
+              ? `<tr class="assign-section-row"><td colspan="3">Inactive</td></tr>${inactiveRows}`
+              : ""
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="assign-actions">
+      <button class="primary-action" type="button" data-assign-save>Save assignments</button>
+      <button class="reject-btn" type="button" data-assign-reset>Reset to default roster</button>
+    </div>
+    ${renderAssignHistoryDetails()}
+  `;
+}
+
+// Deliberately minimal, collapsed by default - this is a rarely-used
+// secondary view, not a primary feature. Last 20 changes only.
+let assignHistorySearch = "";
+let assignHistoryAuditorFilter = "All";
+
+function renderAssignHistoryDetails() {
+  return `
+    <details class="assign-history-details">
+      <summary>Assignment History</summary>
+      <div class="assign-history-toolbar">
+        <input type="text" class="ops-input" placeholder="Search by agent..." data-history-search value="${escapeHtml(assignHistorySearch)}" />
+        <select class="ops-input" data-history-auditor-filter>
+          ${["All", ...AUDITOR_NAMES]
+            .map((name) => `<option value="${escapeHtml(name)}" ${name === assignHistoryAuditorFilter ? "selected" : ""}>${escapeHtml(name)}</option>`)
+            .join("")}
+        </select>
+        <button type="button" class="ops-action-inline" data-history-export>Export CSV</button>
+        <button type="button" class="ops-action-inline" data-history-clear>Clear history</button>
+      </div>
+      <div class="modal-table-wrap assign-history-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Agent</th>
+              <th>Change</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>${renderAssignHistoryRows()}</tbody>
+        </table>
+      </div>
+    </details>
+  `;
+}
+
+function renderAssignHistoryRows() {
+  const query = assignHistorySearch.trim().toLowerCase();
+  const rows = assignmentHistory
+    .filter((item) => !query || item.agent.toLowerCase().includes(query))
+    .filter(
+      (item) => assignHistoryAuditorFilter === "All" || item.from === assignHistoryAuditorFilter || item.to === assignHistoryAuditorFilter,
+    );
+  if (!rows.length) return `<tr><td colspan="4" class="empty">No assignment history yet.</td></tr>`;
+  return rows
+    .map(
+      (item) => `
+      <tr>
+        <td>${escapeHtml(formatDateTime(item.timestamp))}</td>
+        <td>${escapeHtml(item.agent)}</td>
+        <td>${escapeHtml(item.from)} &rarr; ${escapeHtml(item.to)}</td>
+        <td>${escapeHtml(item.action)}</td>
+      </tr>`,
+    )
+    .join("");
+}
+
+function refreshAssignHistoryTable() {
+  const tbody = document.querySelector(".assign-history-table tbody");
+  if (tbody) tbody.innerHTML = renderAssignHistoryRows();
+}
+
+function exportAssignmentHistoryCsv() {
+  const header = "Timestamp,Agent,Previous Auditor,New Auditor,Action";
+  const lines = assignmentHistory.map((item) =>
+    [item.timestamp, item.agent, item.from, item.to, item.action].map((value) => `"${String(value).replace(/"/g, '""')}"`).join(","),
+  );
+  downloadTextFile("assignment-history.csv", "text/csv", [header, ...lines].join("\n"));
+}
+
+function downloadTextFile(filename, mime, text) {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function clearAssignmentHistory() {
+  if (!confirm("Clear all assignment history? This cannot be undone.")) return;
+  assignmentHistory = [];
+  saveAssignmentHistory();
+  refreshAssignHistoryTable();
+}
+
+function saveAgentAssignmentsFromModal() {
+  const selects = [...document.querySelectorAll("[data-assign-agent]")];
+  const newAssignments = { ...agentAssignments };
+  for (const select of selects) {
+    newAssignments[select.dataset.assignAgent] = select.value;
+  }
+  commitAgentAssignments(newAssignments);
+  closeOpsModal();
+}
+
+
 const AUDIT_SHEETS = [
   "https://docs.google.com/spreadsheets/d/1vQmz1N1YNAepVOBV33DjFD9uSWDkMGFpg2z9edBI-tE/edit?usp=chrome_ntp&ouid=112088698588185722807",
   "https://docs.google.com/spreadsheets/d/1onHI3pjujH0g509gKngMKBO3z70D0DkLWlMVdEMkJ80/edit?gid=1289068805#gid=1289068805",
@@ -162,6 +686,7 @@ const metricsEl = document.querySelector("#metrics");
 const resultsEl = document.querySelector("#results");
 const opsToggleBtn = document.querySelector("#opsToggle");
 const opsMenuEl = document.querySelector("#opsMenu");
+const opsBackdropEl = document.querySelector("#opsBackdrop");
 
 let currentPayload = null;
 let currentChannel = "All";
@@ -172,6 +697,8 @@ let ticketHistory = loadTicketHistory();
 let watchlistItems = loadWatchlist();
 let rejectedTickets = new Set(JSON.parse(localStorage.getItem("rejectedTicketsV1") || "[]"));
 let rejectedPatternCounts = JSON.parse(localStorage.getItem("rejectedPatternCountsV1") || "{}");
+let opsMenuOpen = false;
+let opsMenuCloseTimer = null;
 
 fileInput.addEventListener("change", async () => {
   const file = fileInput.files?.[0];
@@ -180,9 +707,66 @@ fileInput.addEventListener("change", async () => {
 });
 
 opsToggleBtn?.addEventListener("click", () => {
-  const nextHidden = !opsMenuEl.hidden;
-  opsMenuEl.hidden = nextHidden;
-  opsToggleBtn.setAttribute("aria-expanded", String(!nextHidden));
+  setOpsMenuOpen(!opsMenuOpen);
+});
+
+// Animating a menu that's `display: none` isn't possible, so the `hidden`
+// attribute is only ever applied once the closing transition has finished -
+// while open (and mid-transition either way) the element stays in the DOM
+// with opacity/transform driving the actual show/hide.
+function setOpsMenuOpen(open) {
+  if (!opsMenuEl || !opsToggleBtn) return;
+  opsMenuOpen = open;
+  window.clearTimeout(opsMenuCloseTimer);
+
+  if (open) {
+    opsMenuEl.hidden = false;
+    if (opsBackdropEl) opsBackdropEl.hidden = false;
+    // Force a layout flush so the browser animates from the closed state
+    // instead of jumping straight to "open" (removing `hidden` and adding
+    // the class in the same tick would otherwise skip the transition).
+    void opsMenuEl.offsetWidth;
+    opsMenuEl.classList.add("open");
+    opsBackdropEl?.classList.add("open");
+  } else {
+    opsMenuEl.classList.remove("open");
+    opsBackdropEl?.classList.remove("open");
+    opsMenuCloseTimer = window.setTimeout(() => {
+      opsMenuEl.hidden = true;
+      if (opsBackdropEl) opsBackdropEl.hidden = true;
+    }, 240);
+  }
+
+  opsMenuEl.setAttribute("aria-hidden", String(!open));
+  opsToggleBtn.setAttribute("aria-expanded", String(open));
+  opsToggleBtn.classList.toggle("active", open);
+  if (open) {
+    opsMenuEl.querySelector(".ops-action")?.focus();
+  }
+}
+
+document.addEventListener("click", (event) => {
+  if (!opsMenuEl || opsMenuEl.getAttribute("aria-hidden") !== "false") return;
+  if (event.target.closest("#opsMenu") || event.target.closest("#opsToggle")) return;
+  setOpsMenuOpen(false);
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  if (opsMenuEl && opsMenuEl.getAttribute("aria-hidden") === "false") {
+    setOpsMenuOpen(false);
+    opsToggleBtn?.focus();
+  }
+});
+
+opsMenuEl?.addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  const items = [...opsMenuEl.querySelectorAll(".ops-action")];
+  const currentIndex = items.indexOf(document.activeElement);
+  if (currentIndex === -1) return;
+  event.preventDefault();
+  const nextIndex = event.key === "ArrowDown" ? (currentIndex + 1) % items.length : (currentIndex - 1 + items.length) % items.length;
+  items[nextIndex].focus();
 });
 
 async function analyzeSelectedFile(file) {
@@ -195,19 +779,38 @@ async function analyzeSelectedFile(file) {
 
   try {
     const buffer = await readUploadedWorkbook(file);
-    currentPayload = await analyzeWorkbook(buffer);
-    savePayloadToHistory(currentPayload, file.name);
-    currentChannel = "All";
-    expandedAgent = null;
-    document.querySelectorAll("[data-channel]").forEach((button) => {
-      button.classList.toggle("active", button.dataset.channel === "All");
-    });
-    controlsEl.hidden = false;
-    auditorTabsEl.hidden = false;
-    activeAuditor = AUDITORS[0].name;
-    renderAuditorTabs();
-    statusEl.textContent = "Done. This N-1 file is stored locally for monthly agent trends.";
-    render();
+    const payload = await analyzeWorkbook(buffer);
+    const meta = computeWorkbookFingerprint(payload);
+    const todayKey = todayDateKey();
+
+    // Duplicate detection: today's slot already has an official worksheet -
+    // ask before silently overwriting it. First upload of the day skips
+    // straight through (nothing to conflict with yet).
+    if (officialWorksheet && officialWorksheet.date === todayKey) {
+      const decision = await openReplaceWorksheetModal();
+      if (decision === "keep") {
+        activatePayload(officialWorksheet.payload, "Kept the existing official worksheet - no changes made.");
+        return;
+      }
+    }
+
+    const uploaderName = promptForUploaderName();
+    officialWorksheet = {
+      fingerprint: meta.fingerprint,
+      date: todayKey,
+      workbookDate: meta.workbookDate,
+      uploadedAt: new Date().toISOString(),
+      uploaderName,
+      workbookName: file.name,
+      ticketCount: meta.ticketCount,
+      firstTicketId: meta.firstTicketId,
+      lastTicketId: meta.lastTicketId,
+      payload,
+    };
+    saveOfficialWorksheet(officialWorksheet);
+    savePayloadToHistory(payload, file.name);
+    activatePayload(payload, "Done. This N-1 file is stored locally for monthly agent trends.");
+    renderTodayCard();
   } catch (error) {
     statusEl.textContent = `Could not analyze workbook: ${getFriendlyFileError(error)}`;
   }
@@ -281,6 +884,18 @@ copyIdealBtn.addEventListener("click", async () => {
 });
 
 document.addEventListener("click", async (event) => {
+  const openToday = event.target.closest("[data-open-today]");
+  if (openToday) {
+    if (officialWorksheet) activatePayload(officialWorksheet.payload, "Showing today's official worksheet.");
+    return;
+  }
+
+  const uploadNew = event.target.closest("[data-upload-new]");
+  if (uploadNew) {
+    fileInput.click();
+    return;
+  }
+
   const opsAction = event.target.closest("[data-ops-action]");
   if (opsAction) {
     handleOpsAction(opsAction.dataset.opsAction);
@@ -308,6 +923,66 @@ document.addEventListener("click", async (event) => {
   const watchDelete = event.target.closest("[data-watch-delete]");
   if (watchDelete) {
     deleteWatchlistItem(watchDelete.dataset.watchDelete);
+    return;
+  }
+
+  const watchResolve = event.target.closest("[data-watch-resolve]");
+  if (watchResolve) {
+    setWatchlistItemStatus(watchResolve.dataset.watchResolve, "Resolved");
+    return;
+  }
+
+  const watchReactivate = event.target.closest("[data-watch-reactivate]");
+  if (watchReactivate) {
+    setWatchlistItemStatus(watchReactivate.dataset.watchReactivate, "Active");
+    return;
+  }
+
+  const watchEdit = event.target.closest("[data-watch-edit]");
+  if (watchEdit) {
+    editWatchlistNote(watchEdit.dataset.watchEdit);
+    return;
+  }
+
+  const historyExport = event.target.closest("[data-history-export]");
+  if (historyExport) {
+    exportAssignmentHistoryCsv();
+    return;
+  }
+
+  const historyClear = event.target.closest("[data-history-clear]");
+  if (historyClear) {
+    clearAssignmentHistory();
+    return;
+  }
+
+  const assignSave = event.target.closest("[data-assign-save]");
+  if (assignSave) {
+    saveAgentAssignmentsFromModal();
+    return;
+  }
+
+  const assignReset = event.target.closest("[data-assign-reset]");
+  if (assignReset) {
+    resetAgentAssignments();
+    closeOpsModal();
+    return;
+  }
+
+  const markInactive = event.target.closest("[data-mark-inactive]");
+  if (markInactive) {
+    const agent = markInactive.dataset.markInactive;
+    if (confirm(`Mark ${agent} as Inactive?\n\nThis will exclude the agent from future sampling while preserving historical data.`)) {
+      setAgentStatus(agent, "Inactive");
+      refreshAssignAgentsPanel();
+    }
+    return;
+  }
+
+  const reactivate = event.target.closest("[data-reactivate]");
+  if (reactivate) {
+    setAgentStatus(reactivate.dataset.reactivate, "Active");
+    refreshAssignAgentsPanel();
     return;
   }
 
@@ -354,6 +1029,24 @@ document.addEventListener("click", async (event) => {
     button.textContent = "Copy";
   }, 1200);
   render();
+});
+
+// Delegated so re-rendering the assign panel (mark inactive/reactivate,
+// save, reset) never needs to re-attach these.
+document.addEventListener("input", (event) => {
+  const historySearch = event.target.closest("[data-history-search]");
+  if (historySearch) {
+    assignHistorySearch = historySearch.value;
+    refreshAssignHistoryTable();
+  }
+});
+
+document.addEventListener("change", (event) => {
+  const auditorFilter = event.target.closest("[data-history-auditor-filter]");
+  if (auditorFilter) {
+    assignHistoryAuditorFilter = auditorFilter.value;
+    refreshAssignHistoryTable();
+  }
 });
 
 async function analyzeWorkbook(buffer) {
@@ -848,8 +1541,21 @@ function getSubjectIssueDetails(subjectValue, channel) {
     "Tigerview",
   ];
   const normalized = subject.replace(/[\u2013\u2014:|]/g, "-").replace(/\s+/g, " ").trim();
-  const matchedModule = knownModules.find((module) => normalized.toLowerCase().startsWith(module.toLowerCase()));
-  const hasHeaderIssue = !matchedModule || !/^[-/]\s*\S.{4,}/.test(normalized.slice(matchedModule.length).trim());
+  const normalizedLower = normalized.toLowerCase();
+  // Accept "Module - Description", "Module // Description", "Module: Description"
+  // (colon/dash/pipe all normalize to "-" above, so "//" and "-" both pass the
+  // separator check), and also "Description - Module" with the module last -
+  // some agents write it either way and both are fine as long as the format
+  // is consistent.
+  const matchedModuleFirst = knownModules.find((module) => normalizedLower.startsWith(module.toLowerCase()));
+  const matchedModuleLast = !matchedModuleFirst && knownModules.find((module) => normalizedLower.endsWith(module.toLowerCase()));
+  let hasHeaderIssue = true;
+  if (matchedModuleFirst) {
+    hasHeaderIssue = !/^[-/]\s*\S.{4,}/.test(normalized.slice(matchedModuleFirst.length).trim());
+  } else if (matchedModuleLast) {
+    const prefix = normalized.slice(0, normalized.length - matchedModuleLast.length).trim();
+    hasHeaderIssue = !/\S.{4,}[-/]\s*$/.test(prefix);
+  }
   let tag = "Header Issue";
   let reason = "Subject does not follow the module - issue format";
   if (isChatDefault) {
@@ -897,7 +1603,7 @@ function scoreTicket(row, channel) {
   }
 
   const requestType = clean(pick(row, "Support Request Type")).toLowerCase();
-  const jiraRequired = JIRA_REQUIRED_TYPES.has(requestType);
+  const jiraRequired = !isMergedChild && JIRA_REQUIRED_TYPES.has(requestType);
   const jiraPresent = rawTags.some((tag) => fuzzyTagMatches(tag, JIRA_TICKET_TAG));
   checks.push(statusTag("Jira required", jiraRequired));
   if (jiraRequired && !jiraPresent) {
@@ -1161,8 +1867,7 @@ function saveWatchlist() {
 }
 
 function handleOpsAction(action) {
-  opsMenuEl.hidden = true;
-  opsToggleBtn?.setAttribute("aria-expanded", "false");
+  setOpsMenuOpen(false);
   if (action === "audit") {
     AUDIT_SHEETS.forEach((url) => window.open(url, "_blank", "noopener,noreferrer"));
     return;
@@ -1181,6 +1886,10 @@ function handleOpsAction(action) {
   }
   if (action === "sop") {
     openSopModal();
+    return;
+  }
+  if (action === "assign") {
+    openAssignAgentsModal();
   }
 }
 
@@ -1230,17 +1939,68 @@ function renderTicketSearchResults() {
   if (!input || !resultsEl) return;
   const query = clean(input.value);
   const id = extractTicketId(query);
-  const matches = findTicketMemoryMatches(id || query);
-  const watchMatches = findWatchlistMatches(id || query);
-  if (!matches.length && !watchMatches.length) {
+  if (!id) {
     resultsEl.className = "ops-results empty";
-    resultsEl.innerHTML = `No stored sample or watchlist note found for <strong>${escapeHtml(query || "-")}</strong>.`;
+    resultsEl.innerHTML = "Enter a ticket ID to search.";
+    return;
+  }
+  const ticket = findExactTicket(id);
+  const watchMatches = findWatchlistMatches(id);
+  if (!ticket) {
+    resultsEl.className = "ops-results empty";
+    resultsEl.innerHTML = `No results for <strong>${escapeHtml(id)}</strong>.${
+      watchMatches.length ? renderWatchlistMatches(watchMatches) : ""
+    }`;
     return;
   }
   resultsEl.className = "ops-results";
   resultsEl.innerHTML = `
-    ${matches.map(renderTicketMemoryCard).join("")}
+    ${renderTicketFullDetail(ticket)}
     ${watchMatches.length ? renderWatchlistMatches(watchMatches) : ""}
+  `;
+}
+
+// Exact match only - a ticket ID either exists or it doesn't, no fuzzy
+// suggestions. Checks the live upload first, then locally stored history.
+function findExactTicket(id) {
+  const needle = clean(id);
+  if (!needle) return null;
+  const live = (currentPayload?.agents || []).flatMap((agent) => agent.tickets).find((ticket) => clean(ticket.ticketId) === needle);
+  if (live) return live;
+  return ticketHistory[needle] || null;
+}
+
+function renderTicketFullDetail(ticket) {
+  const requirementItems = buildRequirementDisplay(ticket);
+  const rawTags = ticket.rawTags || [];
+  return `
+    <article class="memory-card">
+      <div>
+        <strong>${renderTicketLink(ticket.ticketId)}</strong>
+        <span>${escapeHtml(ticket.date || "-")} | ${escapeHtml(ticket.agent || "-")} | ${escapeHtml(ticket.channel || "-")}</span>
+      </div>
+      ${ticket.isMergedChild ? `<div class="memory-line"><b>Status</b>: Merged ticket - not auditable</div>` : ""}
+      <div class="memory-line"><b>Subject</b>: ${escapeHtml(ticket.subject || "-")}</div>
+      <div class="memory-line"><b>Module</b>: ${escapeHtml(ticket.module || "-")} &nbsp; <b>Feature</b>: ${escapeHtml(ticket.feature || "-")}</div>
+      <div class="memory-line"><b>Organization</b>: ${escapeHtml(ticket.organization || "-")}</div>
+      <div class="memory-line"><b>Satisfaction</b>: ${escapeHtml(ticket.satisfaction || "-")}</div>
+      ${
+        ticket.channel === "Chat"
+          ? `<div class="memory-line"><b>Chat duration</b>: ${escapeHtml(ticket.chatDuration || "-")}</div>`
+          : ""
+      }
+      ${
+        ticket.channel === "Voice"
+          ? `<div class="memory-line"><b>Call duration</b>: ${escapeHtml(ticket.callDuration || "-")} min &nbsp; <b>Talk time</b>: ${escapeHtml(ticket.callTalkTime || "-")} min</div>`
+          : ""
+      }
+      <div class="memory-line"><b>Requirement Check</b></div>
+      <div class="memory-tags">${renderRequirementChecks(requirementItems)}</div>
+      <div class="memory-line"><b>Worksheet tags</b>: ${rawTags.length ? escapeHtml(rawTags.join(", ")) : "-"}</div>
+      <div class="memory-line muted">Score ${ticket.score ?? "-"} | Stored from ${escapeHtml(ticket.sourceFile || "current upload")}${
+        ticket.uploadedAt ? ` on ${escapeHtml(formatDateTime(ticket.uploadedAt))}` : ""
+      }</div>
+    </article>
   `;
 }
 
@@ -1319,9 +2079,9 @@ function renderWatchlistMatches(items) {
         <article class="memory-card compact">
           <div>
             <strong>${renderTicketLink(item.ticketId)}</strong>
-            <span>${escapeHtml(item.assignee || "-")} | ${escapeHtml(formatDateTime(item.createdAt))}</span>
+            <span>${escapeHtml(item.snapshot?.agent || item.assignee || "-")} | ${escapeHtml(formatDateTime(item.createdAt))}</span>
           </div>
-          <div class="memory-line">${escapeHtml(item.feedback || "-")}</div>
+          <div class="memory-line">${escapeHtml(item.note || item.feedback || "-")}</div>
         </article>
       `).join("")}
     </section>
@@ -1331,75 +2091,166 @@ function renderWatchlistMatches(items) {
 function openWatchlistModal() {
   openOpsModal(
     "Ticket Watchlist",
-    "Manually track tickets, assignees, and feedback that should be remembered later.",
+    "Track tickets worth remembering - snapshot, note, and status, all in one place.",
     renderWatchlistPanel(),
   );
 }
 
+function refreshWatchlistPanel() {
+  const body = document.querySelector(".ops-panel-body");
+  if (body) body.innerHTML = renderWatchlistPanel();
+}
+
+// A watchlist item's ticket context can drift or disappear from later
+// uploads, so the snapshot captured at add-time is what's shown here -
+// not a live lookup - per the "preserve context even if the workbook
+// changes later" requirement.
+function renderWatchCard(item) {
+  const resolved = item.status === "Resolved";
+  const snap = item.snapshot;
+  const agent = snap?.agent || item.assignee || "";
+  const badges = snap?.badges?.length ? snap.badges.slice(0, 3).join(", ") : "";
+  return `
+    <article class="watch-card ${resolved ? "watch-card-resolved" : ""}">
+      <div class="watch-card-top">
+        <strong>${renderTicketLink(item.ticketId)}</strong>
+        <span class="watch-status ${resolved ? "watch-status-resolved" : "watch-status-active"}">${resolved ? "Resolved" : "Active"}</span>
+      </div>
+      <div class="watch-card-meta">
+        ${agent ? `<span>${escapeHtml(agent)}</span>` : ""}
+        ${snap?.module ? `<span>${escapeHtml(snap.module)}</span>` : ""}
+        ${snap?.channel ? `<span>${escapeHtml(snap.channel)}</span>` : ""}
+      </div>
+      ${badges ? `<div class="watch-card-badges">${escapeHtml(badges)}</div>` : ""}
+      <p class="watch-card-note">${escapeHtml(item.note || item.feedback || "-")}</p>
+      <div class="watch-card-foot">
+        <span>Added ${escapeHtml(formatShortDate(item.createdAt))}</span>
+        <div class="watch-card-actions">
+          <button type="button" class="ops-action-inline" data-watch-edit="${escapeHtml(item.id)}">Edit note</button>
+          ${
+            resolved
+              ? `<button type="button" class="ops-action-inline" data-watch-reactivate="${escapeHtml(item.id)}">Reactivate</button>`
+              : `<button type="button" class="ops-action-inline" data-watch-resolve="${escapeHtml(item.id)}">Mark resolved</button>`
+          }
+          <button type="button" class="ops-action-inline" data-watch-delete="${escapeHtml(item.id)}">Remove</button>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
 function renderWatchlistPanel() {
-  const rows = watchlistItems.length
-    ? watchlistItems
-        .slice()
-        .sort((a, b) => clean(b.createdAt).localeCompare(clean(a.createdAt)))
-        .map((item) => `
-          <tr>
-            <td>${renderTicketLink(item.ticketId)}</td>
-            <td>${escapeHtml(item.assignee || "-")}</td>
-            <td>${escapeHtml(item.feedback || "-")}</td>
-            <td>${escapeHtml(formatDateTime(item.createdAt))}</td>
-            <td><button class="reject-btn" type="button" data-watch-delete="${escapeHtml(item.id)}">Remove</button></td>
-          </tr>
-        `)
-        .join("")
-    : `<tr><td colspan="5" class="empty">No tickets on the watchlist yet.</td></tr>`;
+  const sorted = watchlistItems.slice().sort((a, b) => clean(b.createdAt).localeCompare(clean(a.createdAt)));
+  const cards = sorted.length ? sorted.map(renderWatchCard).join("") : `<div class="empty">No tickets on the watchlist yet.</div>`;
   return `
     <div class="watch-form">
-      <input id="watchTicketInput" class="ops-input" type="text" placeholder="Ticket ID or Zendesk link" />
-      <input id="watchAssigneeInput" class="ops-input" type="text" placeholder="Assignee name" />
-      <textarea id="watchFeedbackInput" class="ops-textarea" rows="3" placeholder="Feedback or reason to watch"></textarea>
+      <input id="watchTicketInput" class="ops-input" type="text" placeholder="Ticket ID or Zendesk link (required)" />
+      <textarea id="watchNoteInput" class="ops-textarea" rows="2" placeholder="Short note - why watch this? (required)"></textarea>
       <button class="primary-action" type="button" data-watch-save>Add to Watchlist</button>
     </div>
-    <div class="modal-table-wrap watchlist-table">
-      <table>
-        <thead>
-          <tr>
-            <th>Ticket ID</th>
-            <th>Assignee</th>
-            <th>Feedback</th>
-            <th>Added</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
+    <div class="watchlist-cards">${cards}</div>
   `;
+}
+
+// Snapshot is captured once, at add-time, from whatever is currently
+// loaded - it deliberately does NOT re-resolve on every render, so it
+// keeps showing the ticket's context even after a newer workbook upload
+// changes or removes that ticket.
+function buildWatchSnapshot(ticketId) {
+  const ticket = (currentPayload?.agents || []).flatMap((agent) => agent.tickets).find((t) => clean(t.ticketId) === ticketId);
+  if (!ticket) return null;
+  return {
+    agent: ticket.agent,
+    auditor: ticket.auditor,
+    channel: ticket.channel,
+    module: ticket.module,
+    feature: ticket.feature,
+    date: ticket.date,
+    badges: buildRequirementDisplay(ticket).map((entry) => entry.label),
+  };
 }
 
 function saveWatchlistFromModal() {
   const ticketInput = document.querySelector("#watchTicketInput");
-  const assigneeInput = document.querySelector("#watchAssigneeInput");
-  const feedbackInput = document.querySelector("#watchFeedbackInput");
+  const noteInput = document.querySelector("#watchNoteInput");
   const ticketId = extractTicketId(ticketInput?.value || "");
-  if (!ticketId) {
-    ticketInput?.focus();
+  const note = clean(noteInput?.value);
+
+  ticketInput?.classList.toggle("input-error", !ticketId);
+  noteInput?.classList.toggle("input-error", !note);
+  if (!ticketId || !note) {
+    (ticketId ? noteInput : ticketInput)?.focus();
     return;
   }
+
   watchlistItems.unshift({
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     ticketId,
-    assignee: clean(assigneeInput?.value),
-    feedback: clean(feedbackInput?.value),
+    note,
+    status: "Active",
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    snapshot: buildWatchSnapshot(ticketId),
   });
   saveWatchlist();
-  openWatchlistModal();
+  refreshWatchlistPanel();
+  render();
 }
 
 function deleteWatchlistItem(id) {
   watchlistItems = watchlistItems.filter((item) => item.id !== id);
   saveWatchlist();
-  openWatchlistModal();
+  refreshWatchlistPanel();
+  render();
+}
+
+function setWatchlistItemStatus(id, status) {
+  const item = watchlistItems.find((entry) => entry.id === id);
+  if (!item) return;
+  item.status = status;
+  item.updatedAt = new Date().toISOString();
+  saveWatchlist();
+  refreshWatchlistPanel();
+  render();
+}
+
+function editWatchlistNote(id) {
+  const item = watchlistItems.find((entry) => entry.id === id);
+  if (!item) return;
+  const updated = prompt("Update watchlist note:", item.note || item.feedback || "");
+  if (updated === null) return; // cancelled
+  const trimmed = clean(updated);
+  if (!trimmed) return; // note stays mandatory - ignore an empty save
+  item.note = trimmed;
+  item.updatedAt = new Date().toISOString();
+  saveWatchlist();
+  refreshWatchlistPanel();
+}
+
+function formatShortDate(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// Single choke point for "does this ticket have a watchlist entry" -
+// renderTicketLink reads through this, which is why the indicator shows up
+// everywhere a ticket link renders (main tables, search, agent drilldowns)
+// without each of those call sites needing to know about watchlist at all.
+function findWatchlistItem(ticketId) {
+  const id = clean(ticketId);
+  if (!id) return null;
+  return watchlistItems.find((item) => clean(item.ticketId) === id) || null;
+}
+
+function countActiveWatchForAgent(agentName) {
+  return watchlistItems.filter((item) => item.status !== "Resolved" && item.snapshot?.agent === agentName).length;
+}
+
+function renderAgentWatchBadge(agentName) {
+  const count = countActiveWatchForAgent(agentName);
+  if (!count) return "";
+  return ` <span class="agent-watch-badge" title="${count} active watched ticket${count === 1 ? "" : "s"}">${WATCH_ICON_SVG}${count}</span>`;
 }
 
 function openSopModal() {
@@ -1587,17 +2438,18 @@ function render() {
 const CHANNEL_SUMMARY_HEADINGS = { Chat: "Chat", Voice: "Calls", Email: "Email" };
 
 function renderSummary(sheets) {
-  const allTickets = (currentPayload?.agents || []).flatMap((agent) => agent.tickets);
+  // Per-auditor, so it updates the moment you switch the auditor tab.
+  const activeTickets = getActiveAgents().flatMap((agent) => agent.tickets);
   summaryEl.innerHTML = sheets
     .map((sheet) => {
       // Max possible samples for this channel today: deduped tickets for a
       // target agent, minus merged/child tickets (nothing to audit there).
-      const available = allTickets.filter((ticket) => ticket.sheet === sheet.sheet && !ticket.isMergedChild).length;
+      const available = activeTickets.filter((ticket) => ticket.sheet === sheet.sheet && !ticket.isMergedChild).length;
       const heading = CHANNEL_SUMMARY_HEADINGS[sheet.channel] || sheet.channel;
       return `
         <article class="metric">
           <strong>${escapeHtml(heading)}</strong>
-          <span class="summary-count">${available}</span>
+          <span class="summary-count count-pulse">${available}</span>
         </article>
       `;
     })
@@ -1637,12 +2489,12 @@ function aggregateMetrics(tickets) {
   };
 
   for (const ticket of tickets) {
-    if (ticket.tags.includes("Missing Jira")) metrics.missingJira += 1;
+    if (!ticket.isMergedChild && ticket.tags.includes("Missing Jira")) metrics.missingJira += 1;
     if (ticket.isMergedChild) metrics.mergedTickets += 1;
-    if (isBlank(ticket.organization)) metrics.blankOrganization += 1;
-    if (hasSubjectTag(ticket)) metrics.headerIssues += 1;
-    if (hasBadCsatTag(ticket)) metrics.badCsat += 1;
-    if (isBlank(ticket.module)) metrics.blankModule += 1;
+    if (!ticket.isMergedChild && isBlank(ticket.organization)) metrics.blankOrganization += 1;
+    if (!ticket.isMergedChild && hasSubjectTag(ticket)) metrics.headerIssues += 1;
+    if (!ticket.isMergedChild && hasBadCsatTag(ticket)) metrics.badCsat += 1;
+    if (!ticket.isMergedChild && isBlank(ticket.module)) metrics.blankModule += 1;
   }
 
   return metrics;
@@ -1663,12 +2515,12 @@ function getMetricTickets(metricKey) {
   const tickets = getActiveAgents().flatMap((agent) => agent.tickets);
   const visible = filterTickets(tickets);
   const predicates = {
-    missingJira: (ticket) => ticket.tags.includes("Missing Jira"),
+    missingJira: (ticket) => !ticket.isMergedChild && ticket.tags.includes("Missing Jira"),
     mergedTickets: (ticket) => ticket.isMergedChild,
-    blankOrganization: (ticket) => isBlank(ticket.organization),
-    headerIssues: (ticket) => hasSubjectTag(ticket),
-    badCsat: (ticket) => hasBadCsatTag(ticket),
-    blankModule: (ticket) => isBlank(ticket.module),
+    blankOrganization: (ticket) => !ticket.isMergedChild && isBlank(ticket.organization),
+    headerIssues: (ticket) => !ticket.isMergedChild && hasSubjectTag(ticket),
+    badCsat: (ticket) => !ticket.isMergedChild && hasBadCsatTag(ticket),
+    blankModule: (ticket) => !ticket.isMergedChild && isBlank(ticket.module),
   };
   return visible.filter(predicates[metricKey] || (() => false));
 }
@@ -1770,8 +2622,14 @@ function closeTagsModal() {
   document.querySelector("[data-tags-modal]")?.remove();
 }
 
+// The single choke point every sampling/metrics/ranking view reads
+// through - filtering Inactive agents out here is what makes agent status
+// apply "immediately" everywhere without touching currentPayload itself.
+// Ticket search and history intentionally bypass this (they read
+// currentPayload/ticketHistory directly) so inactive agents stay visible
+// there, per the historical-accuracy requirement.
 function getActiveAgents() {
-  return (currentPayload?.agents || []).filter((agent) => agent.auditor === activeAuditor);
+  return (currentPayload?.agents || []).filter((agent) => agent.auditor === activeAuditor && isAgentActive(agent.agent));
 }
 
 function renderResults(agents) {
@@ -1789,7 +2647,9 @@ function renderAgent(agent) {
   return `
     <article class="agent">
       <header class="agent-header">
-        <button class="agent-title" type="button" data-agent-summary="${escapeHtml(agent.agent)}">${escapeHtml(agent.agent)}</button>
+        <button class="agent-title" type="button" data-agent-summary="${escapeHtml(agent.agent)}">
+          ${escapeHtml(agent.agent)}${renderAgentWatchBadge(agent.agent)}
+        </button>
         <span class="pill ${agent.status === "Shortage" ? "shortage" : ""}">
           ${agent.status}: ${visibleTickets.length} visible
         </span>
@@ -2045,8 +2905,23 @@ function renderTicketLink(ticketId) {
   const id = clean(ticketId);
   if (!id) return "-";
   const safeId = encodeURIComponent(id);
-  return `<a class="ticket-link" href="https://carestack.zendesk.com/agent/tickets/${safeId}" target="_blank" rel="noopener noreferrer">${escapeHtml(id)}</a>`;
+  const link = `<a class="ticket-link" href="https://carestack.zendesk.com/agent/tickets/${safeId}" target="_blank" rel="noopener noreferrer">${escapeHtml(id)}</a>`;
+  return link + renderWatchIndicator(id);
 }
+
+// Small red binoculars next to any ticket link that's on the watchlist -
+// gray/dimmed if that watch entry has been marked Resolved. Hovering shows
+// the note, date added, and status via the native title tooltip.
+function renderWatchIndicator(ticketId) {
+  const item = findWatchlistItem(ticketId);
+  if (!item) return "";
+  const resolved = item.status === "Resolved";
+  const title = `${item.note || item.feedback || "Watched ticket"} | Added ${formatDateTime(item.createdAt)} | ${resolved ? "Resolved" : "Active"}`;
+  return `<span class="watch-indicator ${resolved ? "watch-indicator-resolved" : "watch-indicator-active"}" title="${escapeHtml(title)}" aria-label="On watchlist: ${escapeHtml(title)}">${WATCH_ICON_SVG}</span>`;
+}
+
+const WATCH_ICON_SVG =
+  '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M6 7a3 3 0 0 0-3 3v5a3 3 0 0 0 3 3h.5a3 3 0 0 0 3-3v-2h5v2a3 3 0 0 0 3 3h.5a3 3 0 0 0 3-3v-5a3 3 0 0 0-3-3h-.5a3 3 0 0 0-3 3v1h-5v-1a3 3 0 0 0-3-3H6Z"/></svg>';
 
 function filterTickets(tickets) {
   if (currentChannel === "All") return tickets || [];
@@ -2120,3 +2995,5 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
+
+renderTodayCard();
