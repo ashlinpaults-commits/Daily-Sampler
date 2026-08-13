@@ -111,10 +111,12 @@ const AGENT_ALIASES = {
 let AGENT_TO_AUDITOR = Object.fromEntries(AUDITORS.flatMap((auditor) => auditor.agents.map((agent) => [agent, auditor.name])));
 
 // ================= Lightweight assignment history =================
-// Deliberately minimal - last 20 changes only, no undo, no draft state.
+// Local cache is capped for display/export performance - Firestore (when
+// reachable) is the permanent, uncapped record per "do not overwrite
+// history" - every change is a new document there, never trimmed.
 // Storage shape (localStorage key "assignmentHistoryV1"), newest first:
-//   [{ id, timestamp, agent, from, to, action }]
-// action is one of "Reassigned" | "Marked Inactive" | "Reactivated".
+//   [{ id, timestamp, agent, from, to, action, changedBy }]
+// action is one of "Reassigned" | "Marked Inactive" | "Reactivated" | "Added".
 function loadAssignmentHistory() {
   try {
     const items = JSON.parse(localStorage.getItem("assignmentHistoryV1") || "[]");
@@ -127,17 +129,64 @@ function loadAssignmentHistory() {
 let assignmentHistory = loadAssignmentHistory();
 
 function saveAssignmentHistory() {
-  assignmentHistory = assignmentHistory.slice(0, 20);
+  assignmentHistory = assignmentHistory.slice(0, 100);
   localStorage.setItem("assignmentHistoryV1", JSON.stringify(assignmentHistory));
 }
 
+// Writes both to the local cache (immediate, always succeeds) and to the
+// shared "assignment_history" Firestore collection (best-effort, fire and
+// forget - a failed remote write never blocks the UI or loses the local
+// record). Doc ID = the local record's own id, so a retry never creates a
+// second copy of the same change.
 function logAssignmentHistory(entry) {
-  assignmentHistory.unshift({
+  const record = {
     id: `h_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     timestamp: new Date().toISOString(),
+    changedBy: currentUpdaterName(),
     ...entry,
-  });
+  };
+  assignmentHistory.unshift(record);
   saveAssignmentHistory();
+
+  const fs = fsBridge();
+  if (fs) {
+    fs.setDocument("assignment_history", record.id, {
+      agentName: record.agent,
+      previousAuditor: record.from,
+      newAuditor: record.to,
+      changedBy: record.changedBy,
+      timestamp: record.timestamp,
+    }).catch(() => {});
+  }
+}
+
+// Refresh-based sync, same pattern as loadAgentRegistryFromFirestore(): one
+// read on startup (and whenever the Assign Agents panel is opened), no
+// onSnapshot. Firestore wins - remote records are merged into the local
+// cache, deduped by id, newest first.
+async function loadAssignmentHistoryFromFirestore() {
+  const fs = fsBridge();
+  if (!fs) return;
+  try {
+    const remote = await fs.getCollection("assignment_history");
+    if (!remote || !Object.keys(remote).length) return;
+    const remoteRecords = Object.entries(remote).map(([id, data]) => ({
+      id,
+      timestamp: data.timestamp || new Date(0).toISOString(),
+      agent: data.agentName || "",
+      from: data.previousAuditor || "(none)",
+      to: data.newAuditor || "(none)",
+      action: data.action || "Reassigned",
+      changedBy: data.changedBy || "Unknown",
+    }));
+    const byId = new Map(assignmentHistory.map((item) => [item.id, item]));
+    for (const record of remoteRecords) byId.set(record.id, record);
+    assignmentHistory = [...byId.values()].sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1));
+    saveAssignmentHistory();
+    if (document.querySelector(".assign-history-table")) refreshAssignHistoryTable();
+  } catch {
+    // Offline/permission error - keep whatever's already cached locally.
+  }
 }
 
 function saveAgentAssignments() {
@@ -149,13 +198,16 @@ function saveAgentAssignments() {
 // uploaded file doesn't need re-uploading), and refreshes the UI.
 function commitAgentAssignments(newAssignments) {
   const previous = agentAssignments;
+  const changedAgents = [];
   for (const agent of Object.keys(newAssignments)) {
     if (previous[agent] && previous[agent] !== newAssignments[agent]) {
       logAssignmentHistory({ agent, from: previous[agent], to: newAssignments[agent], action: "Reassigned" });
+      changedAgents.push(agent);
     }
   }
   agentAssignments = newAssignments;
   saveAgentAssignments();
+  if (changedAgents.length) pushAgentsToFirestore(changedAgents);
   recomputeAgentAuditorMaps();
   reassignCurrentPayloadAuditors();
   if (!AUDITORS.some((auditor) => auditor.name === activeAuditor)) {
@@ -241,6 +293,7 @@ function setAgentStatus(agent, status) {
   if (status === "Inactive") agentStatus[agent] = "Inactive";
   else delete agentStatus[agent];
   saveAgentStatus();
+  pushAgentsToFirestore([agent]);
   renderAuditorTabs();
   render();
 }
@@ -799,6 +852,102 @@ function refreshAssignAgentsPanel() {
   if (body) body.innerHTML = renderAssignAgentsPanel();
 }
 
+// ================= Add Agent (Phase 3B) =================
+function normalizeAgentNameForDuplicateCheck(name) {
+  return clean(name).toLowerCase().replace(/\s+/g, " ");
+}
+
+function findExistingAgentName(name) {
+  const target = normalizeAgentNameForDuplicateCheck(name);
+  if (!target) return null;
+  return Object.keys(agentAssignments).find((existing) => normalizeAgentNameForDuplicateCheck(existing) === target) || null;
+}
+
+function openAddAgentModal() {
+  closeAddAgentModal();
+  const modal = document.createElement("div");
+  modal.className = "modal-backdrop";
+  modal.dataset.addAgentModal = "true";
+  modal.innerHTML = `
+    <section class="metric-modal add-agent-modal" role="dialog" aria-modal="true" aria-label="Add Agent">
+      <header>
+        <div>
+          <strong>Add Agent</strong>
+          <span>New agents are saved as Active immediately.</span>
+        </div>
+        <button type="button" data-close-add-agent aria-label="Close">&times;</button>
+      </header>
+      <div class="ops-panel-body">
+        <div class="add-agent-form">
+          <label>
+            Agent Name
+            <input type="text" class="ops-input" data-add-agent-name placeholder="Full name" autocomplete="off" />
+          </label>
+          <label>
+            Assigned Auditor
+            <select class="ops-input" data-add-agent-auditor>
+              ${AUDITOR_NAMES.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}
+            </select>
+          </label>
+          <div class="add-agent-error" data-add-agent-error hidden>Agent already exists.</div>
+        </div>
+        <div class="assign-actions">
+          <button type="button" class="reject-btn" data-close-add-agent>Cancel</button>
+          <button type="button" class="primary-action" data-add-agent-submit disabled>Add Agent</button>
+        </div>
+      </div>
+    </section>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector("[data-add-agent-name]").focus();
+}
+
+function closeAddAgentModal() {
+  document.querySelector("[data-add-agent-modal]")?.remove();
+}
+
+function validateAddAgentForm() {
+  const modal = document.querySelector("[data-add-agent-modal]");
+  if (!modal) return;
+  const name = clean(modal.querySelector("[data-add-agent-name]").value);
+  const errorEl = modal.querySelector("[data-add-agent-error]");
+  const submitBtn = modal.querySelector("[data-add-agent-submit]");
+  const duplicate = name ? findExistingAgentName(name) : null;
+  errorEl.hidden = !duplicate;
+  submitBtn.disabled = !name || !!duplicate;
+}
+
+// Adds the agent locally first (instant UI update, no page refresh needed
+// for the person adding it), then pushes to Firestore best-effort and logs
+// the addition to assignment history the same way a reassignment would.
+function submitAddAgentForm() {
+  const modal = document.querySelector("[data-add-agent-modal]");
+  if (!modal) return;
+  const nameInput = modal.querySelector("[data-add-agent-name]");
+  const auditorSelect = modal.querySelector("[data-add-agent-auditor]");
+  const name = clean(nameInput.value);
+  if (!name || findExistingAgentName(name)) {
+    validateAddAgentForm();
+    return;
+  }
+  const auditor = auditorSelect.value;
+  const nowIso = new Date().toISOString();
+
+  agentAssignments = { ...agentAssignments, [name]: auditor };
+  saveAgentAssignments();
+  recomputeAgentAuditorMaps();
+  reassignCurrentPayloadAuditors();
+  if (!AUDITORS.some((entry) => entry.name === activeAuditor)) activeAuditor = AUDITORS[0]?.name || null;
+  renderAuditorTabs();
+  render();
+
+  pushAgentsToFirestore([name], { [name]: { createdAt: nowIso } });
+  logAssignmentHistory({ agent: name, from: "(none)", to: auditor, action: "Added" });
+
+  closeAddAgentModal();
+  refreshAssignAgentsPanel();
+}
+
 function renderAgentAssignRow(agent) {
   const currentAuditor = agentAssignments[agent];
   const active = isAgentActive(agent);
@@ -836,6 +985,10 @@ function renderAssignAgentsPanel() {
   const inactiveRows = inactiveAgentsList.map(renderAgentAssignRow).join("");
 
   return `
+    <div class="assign-panel-header">
+      <strong>Agents (${allAgents.length})</strong>
+      <button type="button" class="assign-add-btn" data-add-agent-trigger title="Add Agent" aria-label="Add Agent">+</button>
+    </div>
     <div class="modal-table-wrap assign-table">
       <table>
         <thead>
@@ -890,6 +1043,7 @@ function renderAssignHistoryDetails() {
               <th>Agent</th>
               <th>Change</th>
               <th>Action</th>
+              <th>Changed By</th>
             </tr>
           </thead>
           <tbody>${renderAssignHistoryRows()}</tbody>
@@ -906,7 +1060,7 @@ function renderAssignHistoryRows() {
     .filter(
       (item) => assignHistoryAuditorFilter === "All" || item.from === assignHistoryAuditorFilter || item.to === assignHistoryAuditorFilter,
     );
-  if (!rows.length) return `<tr><td colspan="4" class="empty">No assignment history yet.</td></tr>`;
+  if (!rows.length) return `<tr><td colspan="5" class="empty">No assignment history yet.</td></tr>`;
   return rows
     .map(
       (item) => `
@@ -915,6 +1069,7 @@ function renderAssignHistoryRows() {
         <td>${escapeHtml(item.agent)}</td>
         <td>${escapeHtml(item.from)} &rarr; ${escapeHtml(item.to)}</td>
         <td>${escapeHtml(item.action)}</td>
+        <td>${escapeHtml(item.changedBy || "Unknown")}</td>
       </tr>`,
     )
     .join("");
@@ -926,9 +1081,11 @@ function refreshAssignHistoryTable() {
 }
 
 function exportAssignmentHistoryCsv() {
-  const header = "Timestamp,Agent,Previous Auditor,New Auditor,Action";
+  const header = "Timestamp,Agent,Previous Auditor,New Auditor,Action,Changed By";
   const lines = assignmentHistory.map((item) =>
-    [item.timestamp, item.agent, item.from, item.to, item.action].map((value) => `"${String(value).replace(/"/g, '""')}"`).join(","),
+    [item.timestamp, item.agent, item.from, item.to, item.action, item.changedBy || "Unknown"]
+      .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+      .join(","),
   );
   downloadTextFile("assignment-history.csv", "text/csv", [header, ...lines].join("\n"));
 }
@@ -1390,6 +1547,24 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  const addAgentTrigger = event.target.closest("[data-add-agent-trigger]");
+  if (addAgentTrigger) {
+    openAddAgentModal();
+    return;
+  }
+
+  const closeAddAgent = event.target.closest("[data-close-add-agent]");
+  if (closeAddAgent) {
+    closeAddAgentModal();
+    return;
+  }
+
+  const addAgentSubmit = event.target.closest("[data-add-agent-submit]");
+  if (addAgentSubmit && !addAgentSubmit.disabled) {
+    submitAddAgentForm();
+    return;
+  }
+
   const markInactive = event.target.closest("[data-mark-inactive]");
   if (markInactive) {
     const agent = markInactive.dataset.markInactive;
@@ -1459,6 +1634,27 @@ document.addEventListener("input", (event) => {
   if (historySearch) {
     assignHistorySearch = historySearch.value;
     refreshAssignHistoryTable();
+    return;
+  }
+
+  const addAgentName = event.target.closest("[data-add-agent-name]");
+  if (addAgentName) {
+    validateAddAgentForm();
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  const addAgentModal = document.querySelector("[data-add-agent-modal]");
+  if (!addAgentModal) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeAddAgentModal();
+    return;
+  }
+  if (event.key === "Enter" && event.target.closest("[data-add-agent-name]")) {
+    event.preventDefault();
+    const submitBtn = addAgentModal.querySelector("[data-add-agent-submit]");
+    if (submitBtn && !submitBtn.disabled) submitAddAgentForm();
   }
 });
 
@@ -2604,7 +2800,7 @@ function saveWatchlistFromModal() {
     return;
   }
 
-  watchlistItems.unshift({
+  const newItem = {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     ticketId,
     note,
@@ -2612,7 +2808,8 @@ function saveWatchlistFromModal() {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     snapshot: buildWatchSnapshot(ticketId),
-  });
+  };
+  watchlistItems.unshift(newItem);
   saveWatchlist();
   refreshWatchlistPanel();
   render();
@@ -3415,6 +3612,171 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+// ================= Firestore shared-storage bridge (Phase 3A) =================
+// Scope for this phase is deliberately narrow: ONLY the "agent_registry"
+// collection, ONLY refresh-based sync (no onSnapshot/realtime), and this is
+// the sole place collection names/field names for it are hardcoded - the
+// rest of the app never talks to Firestore directly. A small module script
+// (loaded before this classic script, see index.html) initializes Firebase
+// and exposes a generic doc/collection bridge on window.__fs; everything
+// below is defensive about that bridge not existing yet (module scripts are
+// deferred, so they can finish AFTER this script starts running) or never
+// showing up at all (offline, ad-blocker, no Firebase configured) -
+// localStorage remains the fast local cache and the full fallback in every
+// one of those cases.
+const AGENT_REGISTRY_COLLECTION = "agent_registry";
+let fsConnectionState = "connecting"; // "connecting" | "online" | "offline"
+
+function fsBridge() {
+  return typeof window !== "undefined" && window.__fs && window.__fs.ready ? window.__fs : null;
+}
+
+function setFsConnectionState(state) {
+  if (fsConnectionState === state) return;
+  fsConnectionState = state;
+  renderConnectionIndicator();
+}
+
+function renderConnectionIndicator() {
+  const el = document.querySelector("#connectionIndicator");
+  if (!el) return;
+  const labels = {
+    connecting: "Connecting to shared audit plan...",
+    online: "Synced with shared audit plan",
+    offline: "Offline - showing the audit plan cached on this device",
+  };
+  el.textContent = labels[fsConnectionState] || "";
+  el.className = `connection-indicator ${fsConnectionState}`;
+}
+
+function currentUpdaterName() {
+  return localStorage.getItem("lastUploaderNameV1") || "Unknown";
+}
+
+// Fire-and-forget push - called right after the same data is already
+// written to localStorage, so a failed/slow Firestore write never blocks
+// the UI or loses the local change; it just doesn't reach other auditors
+// until they refresh and Firestore is reachable again.
+// Fire-and-forget push - called right after the same data is already
+// written to localStorage, so a failed/slow Firestore write never blocks
+// the UI or loses the local change; it just doesn't reach other auditors
+// until they refresh and Firestore is reachable again. extraFieldsByAgent
+// optionally supplies per-agent fields (e.g. createdAt when adding a brand
+// new agent) merged into that agent's doc alongside the usual ones.
+function pushAgentsToFirestore(agentNames, extraFieldsByAgent = {}) {
+  const fs = fsBridge();
+  if (!fs || !agentNames.length) return;
+  const updatedBy = currentUpdaterName();
+  const now = new Date().toISOString();
+  const entries = agentNames.map((name) => [
+    name,
+    {
+      agentName: name,
+      assignedAuditor: agentAssignments[name] || "",
+      status: agentStatus[name] === "Inactive" ? "Inactive" : "Active",
+      updatedBy,
+      updatedAt: now,
+      ...(extraFieldsByAgent[name] || {}),
+    },
+  ]);
+  fs.setMany(AGENT_REGISTRY_COLLECTION, entries).catch(() => {});
+}
+
+// Applies a Firestore agent_registry snapshot onto local state and
+// refreshes every view that depends on it (auditor tabs, dashboard counts,
+// Active/Inactive grouping, sampling eligibility) - mirrors what
+// commitAgentAssignments()/setAgentStatus() already do for a local UI
+// action, just starting from remote data instead.
+function applyRemoteAgentRegistry(remoteDocs) {
+  if (!remoteDocs) return false;
+  const nextAssignments = { ...agentAssignments };
+  const nextStatus = { ...agentStatus };
+  let changed = false;
+  for (const [docId, data] of Object.entries(remoteDocs)) {
+    const name = data.agentName || docId;
+    if (!name) continue;
+    if (data.assignedAuditor && nextAssignments[name] !== data.assignedAuditor) {
+      nextAssignments[name] = data.assignedAuditor;
+      changed = true;
+    }
+    const wantInactive = data.status === "Inactive";
+    const isInactiveLocally = nextStatus[name] === "Inactive";
+    if (wantInactive !== isInactiveLocally) {
+      if (wantInactive) nextStatus[name] = "Inactive";
+      else delete nextStatus[name];
+      changed = true;
+    }
+  }
+  if (!changed) return false;
+  agentAssignments = nextAssignments;
+  agentStatus = nextStatus;
+  saveAgentAssignments();
+  saveAgentStatus();
+  recomputeAgentAuditorMaps();
+  reassignCurrentPayloadAuditors();
+  if (!AUDITORS.some((auditor) => auditor.name === activeAuditor)) {
+    activeAuditor = AUDITORS[0]?.name || null;
+  }
+  renderAuditorTabs();
+  render(); // recalculates Chat/Call/Email/eligible counts - already auditor-scoped via getActiveAgents()
+  if (document.querySelector(".ops-panel-body [data-assign-agent]")) refreshAssignAgentsPanel();
+  return true;
+}
+
+// The whole "startup flow" from the spec, in order:
+//   1. load cached assignments  - already done synchronously above
+//      (agentAssignments/agentStatus = load...() at module load time), so
+//      the app is usable immediately even before this async step resolves.
+//   2. load Firestore           - fs.getCollection (one-time read, NOT
+//      onSnapshot - this phase is refresh-based sync only, by design).
+//   3. replace the cache        - applyRemoteAgentRegistry()
+//   4. refresh the UI           - also inside applyRemoteAgentRegistry()
+async function loadAgentRegistryFromFirestore() {
+  const fs = fsBridge();
+  if (!fs) {
+    setFsConnectionState("offline");
+    return;
+  }
+  try {
+    const remote = await fs.getCollection(AGENT_REGISTRY_COLLECTION);
+    setFsConnectionState("online");
+    if (remote && Object.keys(remote).length) {
+      applyRemoteAgentRegistry(remote);
+    } else if (Object.keys(agentAssignments).length) {
+      // Collection is empty but this device already has an assignment map -
+      // seed Firestore from it once, so a brand-new project doesn't just
+      // sit empty forever waiting for someone to touch every dropdown.
+      pushAgentsToFirestore(Object.keys(agentAssignments));
+    }
+  } catch (error) {
+    // Offline, permission error, etc. - error handling requirement: keep
+    // the app usable on whatever's already cached locally, never throw.
+    setFsConnectionState("offline");
+  }
+}
+
+if (typeof window !== "undefined") {
+  const startupFirestoreSync = async () => {
+    // Sequenced per spec: agent registry first (it's what the rest of the
+    // UI depends on to even group agents correctly), then history - both
+    // best-effort, neither blocks initial render since local cache already
+    // rendered synchronously before this ever runs.
+    await loadAgentRegistryFromFirestore();
+    await loadAssignmentHistoryFromFirestore();
+  };
+  if (window.__fs?.ready) {
+    startupFirestoreSync();
+  } else {
+    window.addEventListener("firestore-ready", () => startupFirestoreSync(), { once: true });
+    // No Firebase config reachable at all (offline, blocked, or not wired
+    // up) - fall back to local-only mode rather than showing "Connecting..."
+    // forever.
+    setTimeout(() => {
+      if (!fsBridge()) setFsConnectionState("offline");
+    }, 8000);
+  }
 }
 
 renderTodayCard();

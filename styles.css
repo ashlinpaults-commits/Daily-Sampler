@@ -56,6 +56,36 @@ body {
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
+.connection-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.connection-indicator::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.connection-indicator.connecting {
+  color: #f2c94c;
+}
+
+.connection-indicator.online {
+  color: #52d68a;
+}
+
+.connection-indicator.offline {
+  color: rgba(255, 255, 255, 0.55);
+}
+
 h1 {
   margin: 0 0 6px;
   font-size: 28px;
@@ -1094,6 +1124,91 @@ td {
 .ops-action.assign .ops-glyph {
   background: #fff3e0;
   color: var(--amber);
+}
+
+.assign-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.assign-panel-header strong {
+  color: var(--teal-dark);
+  font-size: 13px;
+}
+
+.assign-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--teal-dark);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(15, 33, 38, 0.12);
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.assign-add-btn:hover {
+  background: var(--teal);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(15, 33, 38, 0.2);
+  transform: scale(1.08);
+}
+
+.assign-add-btn:active {
+  transform: scale(0.94);
+}
+
+.assign-add-btn:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.add-agent-modal {
+  width: min(380px, 92vw);
+  animation: addAgentPopIn 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes addAgentPopIn {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.add-agent-form {
+  display: grid;
+  gap: 12px;
+}
+
+.add-agent-form label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.add-agent-error {
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: #f7e9e7;
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 700;
+  animation: addAgentPopIn 0.15s ease;
 }
 
 .assign-actions {
