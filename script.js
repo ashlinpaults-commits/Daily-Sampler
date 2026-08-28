@@ -1,4 +1,7 @@
 import { db } from "./firebase.js";
+import samplerStorage from "./sampler-storage.js";
+import samplerAnalytics from "./sampler-analytics.js";
+import samplerMigration from "./sampler-migration.js";
 
 console.log("Firebase connected:", db);
 const fileInput = document.querySelector("#fileInput");
@@ -64,7 +67,20 @@ copyIdealBtn.addEventListener("click", async () => {
 
   if (!rows.length) return;
   await navigator.clipboard.writeText(rows.join("\n"));
-  rows.forEach((row) => copiedTickets.add(row.split("\t")[1]));
+  
+  rows.forEach((row) => {
+    const ticketId = row.split("\t")[1];
+    copiedTickets.add(ticketId);
+    
+    // NEW: Persist to compact storage
+    const ticket = currentPayload.agents
+      .flatMap(a => a.picks)
+      .find(t => t.ticketId === ticketId);
+    if (ticket) {
+      samplerStorage.persistSampledTicket(ticket);
+    }
+  });
+  
   persistCopiedTickets();
   copyIdealBtn.textContent = "Copied Ideals";
   setTimeout(() => {
@@ -77,7 +93,18 @@ document.addEventListener("click", async (event) => {
   const button = event.target.closest(".copy-btn");
   if (!button) return;
   await navigator.clipboard.writeText(button.dataset.copy);
-  copiedTickets.add(button.dataset.ticketId);
+  
+  const ticketId = button.dataset.ticketId;
+  copiedTickets.add(ticketId);
+  
+  // NEW: Persist to compact storage
+  const ticket = currentPayload.agents
+    .flatMap(a => [...a.picks, ...a.tickets])
+    .find(t => t.ticketId === ticketId);
+  if (ticket) {
+    samplerStorage.persistSampledTicket(ticket);
+  }
+  
   persistCopiedTickets();
   button.textContent = "Copied";
   setTimeout(() => {
@@ -221,7 +248,11 @@ function optionLabel(ticket) {
 }
 
 function persistCopiedTickets() {
-  localStorage.setItem("copiedTickets", JSON.stringify([...copiedTickets]));
+  // Sampled tickets now persist via samplerStorage when copied
+  const status = samplerStorage.getStorageStatus();
+  if (status.warningLevel) {
+    console.warn("[Sampler] Storage quota approaching:", status);
+  }
 }
 
 function escapeHtml(value) {
