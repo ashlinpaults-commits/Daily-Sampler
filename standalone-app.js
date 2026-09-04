@@ -7523,3 +7523,62 @@ document.addEventListener("keydown", (event) => {
     expandMorphSearch();
   }
 });
+
+// ==========================================================================
+// THEME MANAGER (Light & Dark Liquid iOS Themes)
+// ==========================================================================
+const themeSwitchBtn = document.querySelector("#themeSwitchBtn");
+const themeQuickToggleBtn = document.querySelector("#themeQuickToggle");
+const opsThemeRowEl = document.querySelector("#opsThemeRow");
+const opsThemeSubtitleEl = document.querySelector("#opsThemeSubtitle");
+
+function getCurrentTheme() {
+  return document.documentElement.getAttribute("data-theme") || localStorage.getItem("sampler-theme") || "dark";
+}
+
+function applyTheme(theme, persist = true) {
+  const normalized = theme === "light" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", normalized);
+  if (persist) {
+    localStorage.setItem("sampler-theme", normalized);
+  }
+
+  const isLight = normalized === "light";
+  if (themeSwitchBtn) {
+    themeSwitchBtn.setAttribute("aria-checked", String(isLight));
+    themeSwitchBtn.classList.toggle("active", isLight);
+  }
+  if (themeQuickToggleBtn) {
+    themeQuickToggleBtn.classList.toggle("is-light", isLight);
+    themeQuickToggleBtn.setAttribute("title", isLight ? "Switch to Dark Mode (Teal Glass)" : "Switch to Light Mode (Textured Glass)");
+    themeQuickToggleBtn.setAttribute("aria-label", isLight ? "Switch to Dark Mode" : "Switch to Light Mode");
+  }
+  if (opsThemeSubtitleEl) {
+    opsThemeSubtitleEl.textContent = isLight ? "Light Mode (Textured Glass)" : "Dark Mode (Teal Glass)";
+  }
+}
+
+function toggleThemeMode() {
+  triggerHapticPulse();
+  const next = getCurrentTheme() === "light" ? "dark" : "light";
+  applyTheme(next, true);
+}
+
+// Event Listeners for Theme Toggling
+themeSwitchBtn?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  toggleThemeMode();
+});
+
+opsThemeRowEl?.addEventListener("click", (event) => {
+  if (event.target.closest("#themeSwitchBtn")) return;
+  toggleThemeMode();
+});
+
+themeQuickToggleBtn?.addEventListener("click", () => {
+  toggleThemeMode();
+});
+
+// Initialize Theme UI on startup
+applyTheme(getCurrentTheme(), false);
+
