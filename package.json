@@ -1,4 +1,11 @@
 {
+  "name": "sampler-v3",
+  "version": "3.0.0",
+  "description": "Daily Sampler V3.0 — Compact Intelligence, Locked Reporting Calendar & Teal-Coral Design System",
+  "main": "standalone-app.js",
+  "scripts": {
+    "build": "node build-standalone.mjs"
+  },
   "dependencies": {
     "firebase": "^12.17.1"
   }

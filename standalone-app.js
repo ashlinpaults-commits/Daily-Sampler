@@ -1,3 +1,172 @@
+
+let recentSharedSessions = {};
+let activeSessionDate = null;
+let sessionBroadcastChannel = null;
+
+try {
+  if (typeof BroadcastChannel !== "undefined") {
+    sessionBroadcastChannel = new BroadcastChannel("sampler_daily_session");
+    sessionBroadcastChannel.onmessage = (event) => {
+      const data = event.data;
+      if (data?.type === "SESSION_UPLOAD" && data.payload) {
+        const dateKey = data.manifest?.samplingDate || data.samplingDate || todayDateKey();
+        recentSharedSessions[dateKey] = {
+          payload: data.payload,
+          manifest: data.manifest,
+          reqIntel: data.reqIntel,
+          uploadedAt: new Date().toISOString(),
+          uploader: data.uploader || "Auditor",
+          samplingDate: dateKey,
+        };
+        activeSessionDate = dateKey;
+        if (data.manifest) recordDailyManifest(data.manifest);
+        if (data.reqIntel) recordWorkbookRequirementIntelligence(data.reqIntel);
+        viewingHistorical = null;
+        activatePayload(data.payload, `Done. ${formatWeekdayLabel(dateKey)} Sample loaded for active sampling.`);
+        renderTodayCard();
+        migrateLegacyStorageIdentities();
+        renderHistoricalBanner();
+      } else if (data?.type === "SESSION_RESET") {
+        recentSharedSessions = {};
+        activeSessionDate = null;
+        currentPayload = null;
+        allTickets = [];
+        viewingHistorical = false;
+        closeOpsModal();
+        renderTodayCard();
+        if (typeof render === "function") render();
+      }
+    };
+  }
+} catch (_) {}
+
+async function syncDailySessionToServer(payload, manifest, reqIntel) {
+  try {
+    const dateKey = manifest?.samplingDate || payload?.samplingDate || todayDateKey();
+    recentSharedSessions[dateKey] = {
+      payload,
+      manifest,
+      reqIntel,
+      uploadedAt: new Date().toISOString(),
+      uploader: manifest?.uploader || "Lead Auditor",
+      samplingDate: dateKey,
+    };
+    activeSessionDate = dateKey;
+
+    if (sessionBroadcastChannel) {
+      sessionBroadcastChannel.postMessage({
+        type: "SESSION_UPLOAD",
+        payload,
+        manifest,
+        reqIntel,
+        samplingDate: dateKey,
+        uploader: manifest?.uploader,
+      });
+    }
+    if (typeof window !== "undefined" && window.location?.protocol?.startsWith("http")) {
+      await fetch("/api/session/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payload, manifest, reqIntel, uploader: manifest?.uploader }),
+      });
+    }
+  } catch (_) {}
+}
+
+async function syncDailySessionResetToServer() {
+  try {
+    recentSharedSessions = {};
+    activeSessionDate = null;
+    if (sessionBroadcastChannel) {
+      sessionBroadcastChannel.postMessage({ type: "SESSION_RESET" });
+    }
+    if (typeof window !== "undefined" && window.location?.protocol?.startsWith("http")) {
+      await fetch("/api/session/reset", { method: "POST" });
+    }
+  } catch (_) {}
+}
+
+async function checkRemoteDailySession() {
+  try {
+    if (typeof window !== "undefined" && window.location?.protocol?.startsWith("http")) {
+      const res = await fetch("/api/session/active");
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.active && data?.sessions) {
+          recentSharedSessions = data.sessions;
+          const availableDates = data.availableDates || Object.keys(data.sessions).sort((a, b) => b.localeCompare(a));
+          const expectedSampleDate = computeDefaultSamplingDate(todayDateKey());
+          
+          if (!activeSessionDate || !recentSharedSessions[activeSessionDate]) {
+            // Prioritize the expected business sample date for today (e.g. Friday sample on Monday)
+            if (recentSharedSessions[expectedSampleDate]) {
+              activeSessionDate = expectedSampleDate;
+            } else {
+              activeSessionDate = availableDates[0];
+            }
+          }
+
+          const currentSession = recentSharedSessions[activeSessionDate];
+          if (currentSession?.payload) {
+            if (currentSession.manifest) recordDailyManifest(currentSession.manifest);
+            if (currentSession.reqIntel) recordWorkbookRequirementIntelligence(currentSession.reqIntel);
+            viewingHistorical = null;
+            activatePayload(currentSession.payload, `Done. ${formatWeekdayLabel(currentSession.manifest?.samplingDate || activeSessionDate)} Sample loaded for active sampling.`);
+            renderTodayCard();
+            renderHistoricalBanner();
+          }
+        } else if (data && !data.active) {
+          // If server was restarted and has 0 sessions in memory, clear local volatile cache
+          if (Object.keys(recentSharedSessions).length > 0) {
+            recentSharedSessions = {};
+            activeSessionDate = null;
+            currentPayload = null;
+            allTickets = [];
+            renderTodayCard();
+            if (typeof render === "function") render();
+          }
+        }
+      }
+    }
+  } catch (_) {}
+}
+
+function switchActiveDailySession(targetDate) {
+  if (!recentSharedSessions[targetDate]) {
+    fetch(`/api/session/day?date=${encodeURIComponent(targetDate)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.success && data?.session?.payload) {
+          recentSharedSessions[targetDate] = data.session;
+          applySessionDateSwitch(targetDate);
+        }
+      })
+      .catch(() => {});
+    return;
+  }
+  applySessionDateSwitch(targetDate);
+}
+
+function applySessionDateSwitch(targetDate) {
+  const session = recentSharedSessions[targetDate];
+  if (!session?.payload) return;
+  activeSessionDate = targetDate;
+  if (session.manifest) recordDailyManifest(session.manifest);
+  if (session.reqIntel) recordWorkbookRequirementIntelligence(session.reqIntel);
+  viewingHistorical = null;
+  activatePayload(session.payload, `Viewing ${formatWeekdayLabel(session.manifest?.samplingDate || targetDate)} Sample.`);
+  renderTodayCard();
+  renderHistoricalBanner();
+}
+
+function triggerHapticPulse() {
+  try {
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      navigator.vibrate(10);
+    }
+  } catch (_) {}
+}
+
 const DEFAULT_AUDITORS = [
   {
     name: "Ashlin Paul",
@@ -57,6 +226,23 @@ const DEFAULT_AUDITORS = [
 const AGENT_ROSTER = DEFAULT_AUDITORS.flatMap((auditor) => auditor.agents);
 const AUDITOR_NAMES = DEFAULT_AUDITORS.map((auditor) => auditor.name);
 
+// ================= Phase 6 Storage Quota Hardening =================
+// Centralized, crash-proof wrapper for all localStorage write operations.
+// QuotaExceededError or private browsing restrictions will NEVER interrupt
+// active in-memory analysis, sampling, copying, or rendering workflows.
+function safeStorageSetItem(key, value) {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    console.warn(`[Sampler Storage] Non-blocking storage failure for key "${key}":`, error);
+    if (typeof statusEl !== "undefined" && statusEl) {
+      statusEl.textContent = `Notice: Local storage write for ${key} was skipped (${error?.name || "quota limit"}). Current in-memory sampling session remains active.`;
+    }
+    return false;
+  }
+}
+
 function loadAgentAssignments() {
   const assignments = {};
   for (const auditor of DEFAULT_AUDITORS) {
@@ -65,11 +251,9 @@ function loadAgentAssignments() {
   try {
     const saved = JSON.parse(localStorage.getItem("agentAssignmentsV1") || "null");
     if (saved && typeof saved === "object") {
-      const validAuditors = new Set(AUDITOR_NAMES);
-      // Overlay every saved key, not just ones already in the default roster,
-      // so agents added later (e.g. via Excel import) survive a reload.
+      // Overlay every saved key so agents added or renamed survive a reload.
       for (const [agent, auditor] of Object.entries(saved)) {
-        if (agent && validAuditors.has(auditor)) assignments[agent] = auditor;
+        if (agent && auditor) assignments[agent] = auditor;
       }
     }
   } catch {
@@ -99,15 +283,39 @@ function recomputeAgentAuditorMaps() {
   AGENT_TO_AUDITOR = Object.fromEntries(AUDITORS.flatMap((auditor) => auditor.agents.map((agent) => [agent, auditor.name])));
 }
 
+const AGENT_ALIASES_KEY = "agentAliasesV1";
+
+function loadAgentAliases() {
+  const defaults = {
+    [normalizeName("Anandu S")]: "Anandu Somaraj",
+    [normalizeName("Abijith Vijay")]: "Abhijith Vijay",
+    [normalizeName("Shwetha U Krishnan")]: "Swetha U Krishnan",
+    [normalizeName("Swetha Krishnan")]: "Swetha U Krishnan",
+  };
+  try {
+    const saved = JSON.parse(localStorage.getItem(AGENT_ALIASES_KEY) || "{}");
+    return { ...defaults, ...(typeof saved === "object" && saved !== null ? saved : {}) };
+  } catch {
+    return defaults;
+  }
+}
+
+let AGENT_ALIASES = loadAgentAliases();
+
+function saveAgentAliases() {
+  safeStorageSetItem(AGENT_ALIASES_KEY, JSON.stringify(AGENT_ALIASES));
+}
+
+function addAgentAlias(alias, canonicalAgent) {
+  const normAlias = normalizeName(alias);
+  if (!normAlias || !canonicalAgent) return;
+  AGENT_ALIASES[normAlias] = canonicalAgent;
+  saveAgentAliases();
+}
+
 let AUDITORS = buildAuditorsFromAssignments();
 let TARGET_AGENTS = AUDITORS.flatMap((auditor) => auditor.agents);
 let AGENT_LOOKUP = Object.fromEntries(TARGET_AGENTS.map((agent) => [normalizeName(agent), agent]));
-const AGENT_ALIASES = {
-  [normalizeName("Anandu S")]: "Anandu Somaraj",
-  [normalizeName("Abijith Vijay")]: "Abhijith Vijay",
-  [normalizeName("Shwetha U Krishnan")]: "Swetha U Krishnan",
-  [normalizeName("Swetha Krishnan")]: "Swetha U Krishnan",
-};
 let AGENT_TO_AUDITOR = Object.fromEntries(AUDITORS.flatMap((auditor) => auditor.agents.map((agent) => [agent, auditor.name])));
 
 // ================= Lightweight assignment history =================
@@ -130,7 +338,7 @@ let assignmentHistory = loadAssignmentHistory();
 
 function saveAssignmentHistory() {
   assignmentHistory = assignmentHistory.slice(0, 100);
-  localStorage.setItem("assignmentHistoryV1", JSON.stringify(assignmentHistory));
+  safeStorageSetItem("assignmentHistoryV1", JSON.stringify(assignmentHistory));
 }
 
 // Writes both to the local cache (immediate, always succeeds) and to the
@@ -190,7 +398,7 @@ async function loadAssignmentHistoryFromFirestore() {
 }
 
 function saveAgentAssignments() {
-  localStorage.setItem("agentAssignmentsV1", JSON.stringify(agentAssignments));
+  safeStorageSetItem("agentAssignmentsV1", JSON.stringify(agentAssignments));
 }
 
 // Applies a full agent->auditor map: persists it, rebuilds the AUDITORS
@@ -205,7 +413,7 @@ function commitAgentAssignments(newAssignments) {
       changedAgents.push(agent);
     }
   }
-  agentAssignments = newAssignments;
+  agentAssignments = { ...agentAssignments, ...newAssignments };
   saveAgentAssignments();
   if (changedAgents.length) pushAgentsToFirestore(changedAgents);
   recomputeAgentAuditorMaps();
@@ -213,7 +421,6 @@ function commitAgentAssignments(newAssignments) {
   if (!AUDITORS.some((auditor) => auditor.name === activeAuditor)) {
     activeAuditor = AUDITORS[0]?.name || null;
   }
-  renderAuditorTabs();
   render();
 }
 
@@ -268,7 +475,7 @@ function loadAgentStatus() {
 let agentStatus = loadAgentStatus();
 
 function saveAgentStatus() {
-  localStorage.setItem("agentStatusV1", JSON.stringify(agentStatus));
+  safeStorageSetItem("agentStatusV1", JSON.stringify(agentStatus));
 }
 
 // Only "Active" and "Inactive" are implemented this phase, but reading
@@ -296,29 +503,6 @@ function setAgentStatus(agent, status) {
   pushAgentsToFirestore([agent]);
   renderAuditorTabs();
   render();
-}
-
-// ================= Today's Official Worksheet (Phase 2A) =================
-// Local-only for now, by design: "Design the structure so it can later move
-// to shared storage" - the shape below (metadata + full analyzed payload)
-// is what a future shared backend would just replicate, so nothing here
-// needs to change when that lands. Not a real multi-user share yet since
-// localStorage is per-browser.
-const OFFICIAL_WORKSHEET_KEY = "officialWorksheetV1";
-
-function loadOfficialWorksheet() {
-  try {
-    const data = JSON.parse(localStorage.getItem(OFFICIAL_WORKSHEET_KEY) || "null");
-    return data && typeof data === "object" && data.payload ? data : null;
-  } catch {
-    return null;
-  }
-}
-
-let officialWorksheet = loadOfficialWorksheet();
-
-function saveOfficialWorksheet(entry) {
-  localStorage.setItem(OFFICIAL_WORKSHEET_KEY, JSON.stringify(entry));
 }
 
 function todayDateKey() {
@@ -372,7 +556,7 @@ function computeWorkbookFingerprint(payload) {
 function promptForUploaderName() {
   const lastName = localStorage.getItem("lastUploaderNameV1") || "";
   const name = clean(prompt("Your name (for the worksheet record, optional):", lastName));
-  if (name) localStorage.setItem("lastUploaderNameV1", name);
+  if (name) safeStorageSetItem("lastUploaderNameV1", name);
   return name || null;
 }
 
@@ -383,7 +567,23 @@ function promptForUploaderName() {
 // still picks it explicitly (a suggested default, not a silent guess), but
 // this is what pre-fills that picker.
 function dateKeyToDate(dateKey) {
+  if (!dateKey) return new Date();
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateKey)) {
+    const [mm, dd, yyyy] = dateKey.split("/");
+    return new Date(`${yyyy}-${mm}-${dd}T00:00:00`);
+  }
   return new Date(`${dateKey}T00:00:00`);
+}
+
+function normalizeDateKey(dateKey) {
+  if (!dateKey) return todayDateKey();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return dateKey;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateKey)) {
+    const [mm, dd, yyyy] = dateKey.split("/");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  const d = new Date(dateKey);
+  return Number.isNaN(d.getTime()) ? todayDateKey() : dateToKey(d);
 }
 
 function dateToKey(date) {
@@ -410,27 +610,82 @@ function computeDefaultSamplingDate(referenceDateKey) {
   return addDaysToKey(referenceDateKey, -stepBack);
 }
 
-function getMondayKey(dateKey) {
-  const date = dateKeyToDate(dateKey);
-  const day = date.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  return addDaysToKey(dateKey, diff);
+// ================= Reporting calendar (single source of truth) =================
+// Locked business rule: reporting week runs Saturday through Friday, numbered
+// continuously across the whole year (not reset per month).
+// Each reporting year's Week 1 starts on the Saturday on/after Jan 1 -
+// EXCEPT when Jan 1 itself falls on a Friday, in which case the following
+// Sat/Sun are excluded and Week 1 operationally starts the next Monday
+// (a short Mon-Fri week). This is the only way to satisfy the locked
+// 2027 W01 = 01/04/2027 boundary alongside every other locked boundary.
+function getReportingYearAnchorKey(year) {
+  const jan1Key = `${year}-01-01`;
+  const day = dateKeyToDate(jan1Key).getDay(); // 0 Sun .. 6 Sat
+  if (day === 5) return addDaysToKey(jan1Key, 3); // Fri Jan 1 -> following Monday
+  const daysToSaturday = (6 - day + 7) % 7;
+  return addDaysToKey(jan1Key, daysToSaturday);
 }
 
-// "Week 1" of a month is whichever Monday-starting week contains the 1st of
-// that month, numbered forward from there - matches how QA teams usually
-// talk about "week 2 of August" regardless of which weekday the 1st falls on.
 function computeQaWeekNumber(samplingDateKey) {
-  const monday = getMondayKey(samplingDateKey);
-  const [year, month] = samplingDateKey.split("-").map(Number);
-  const firstOfMonth = `${year}-${String(month).padStart(2, "0")}-01`;
-  const firstMonday = getMondayKey(firstOfMonth);
-  const diffDays = Math.round((dateKeyToDate(monday) - dateKeyToDate(firstMonday)) / 86400000);
-  return Math.floor(diffDays / 7) + 1;
+  const normKey = normalizeDateKey(samplingDateKey);
+  let year = dateKeyToDate(normKey).getFullYear();
+  let anchorKey = getReportingYearAnchorKey(year);
+  let isPriorCycleTail = false;
+  if (normKey < anchorKey) {
+    // Falls in the previous cycle's tail (e.g. Jan 1-3 before the next
+    // year's anchor) - belongs to the prior reporting year's last week (W52).
+    year -= 1;
+    anchorKey = getReportingYearAnchorKey(year);
+    isPriorCycleTail = true;
+  }
+  const diffDays = Math.round((dateKeyToDate(normKey) - dateKeyToDate(anchorKey)) / 86400000);
+  const weekNum = Math.floor(diffDays / 7) + 1;
+  return isPriorCycleTail ? Math.min(weekNum, 52) : Math.min(weekNum, 52);
 }
 
 function computeQaMonthKey(samplingDateKey) {
-  return samplingDateKey.slice(0, 7); // "YYYY-MM"
+  return normalizeDateKey(samplingDateKey).slice(0, 7); // "YYYY-MM"
+}
+
+function computeQaQuarterKey(samplingDateKey) {
+  const weekNumber = computeQaWeekNumber(samplingDateKey);
+  let year = dateKeyToDate(samplingDateKey).getFullYear();
+  const anchorKey = getReportingYearAnchorKey(year);
+  if (samplingDateKey < anchorKey) {
+    year -= 1;
+  }
+  if (weekNumber <= 12) return `${year}-Q1`;
+  if (weekNumber <= 25) return `${year}-Q2`;
+  if (weekNumber <= 38) return `${year}-Q3`;
+  return `${year}-Q4`;
+}
+
+function getQuarterDetails(quarterKey) {
+  const [yearStr, qStr] = quarterKey.split("-");
+  const year = Number(yearStr) || new Date().getFullYear();
+  const q = qStr || "Q1";
+  const map = {
+    Q1: { startWeek: 1, endWeek: 12, label: `Q1 ${year} (Weeks 1–12)` },
+    Q2: { startWeek: 13, endWeek: 25, label: `Q2 ${year} (Weeks 13–25)` },
+    Q3: { startWeek: 26, endWeek: 38, label: `Q3 ${year} (Weeks 26–38)` },
+    Q4: { startWeek: 39, endWeek: 52, label: `Q4 ${year} (Weeks 39–52)` },
+  };
+  return map[q] || map.Q1;
+}
+
+function getPriorQuarterKey(quarterKey) {
+  const [yearStr, qStr] = quarterKey.split("-");
+  let year = Number(yearStr) || new Date().getFullYear();
+  if (qStr === "Q4") return `${year}-Q3`;
+  if (qStr === "Q3") return `${year}-Q2`;
+  if (qStr === "Q2") return `${year}-Q1`;
+  return `${year - 1}-Q4`;
+}
+
+function shiftMonthKey(monthKey, delta) {
+  const [year, month] = monthKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
 function formatMonthLabel(monthKey) {
@@ -438,70 +693,690 @@ function formatMonthLabel(monthKey) {
   return new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
 }
 
+function getWeekWindow(weekNumber, year) {
+  const targetYear = Number(year) || new Date().getFullYear();
+  const targetWeek = Number(weekNumber) || 1;
+  const anchorKey = getReportingYearAnchorKey(targetYear);
+  const [ay, am, ad] = anchorKey.split("-").map(Number);
+  const startDate = new Date(Date.UTC(ay, am - 1, ad + (targetWeek - 1) * 7));
+  const endDate = new Date(Date.UTC(ay, am - 1, ad + (targetWeek - 1) * 7 + 6));
+  return `${formatLongDate(startDate)} to ${formatLongDate(endDate)}`;
+}
+
+function getMostRecentCompletedReportingWeek(referenceDateKey) {
+  const refKey = normalizeDateKey(referenceDateKey || todayDateKey());
+  const day = dateKeyToDate(refKey).getDay(); // 0 Sun .. 6 Sat
+  // Reporting week runs Saturday through Friday, ending on Friday.
+  // The most recent completed reporting week ended on the preceding Friday.
+  const daysSinceFriday = (day - 5 + 7) % 7;
+  const lastFridayKey = addDaysToKey(refKey, -daysSinceFriday);
+  const weekNumber = computeQaWeekNumber(lastFridayKey);
+  let year = dateKeyToDate(lastFridayKey).getFullYear();
+  const anchor = getReportingYearAnchorKey(year);
+  if (lastFridayKey < anchor) year -= 1;
+  return {
+    weekNumber,
+    year,
+    dateKey: lastFridayKey,
+    label: `Week ${weekNumber} (${year})`,
+    window: getWeekWindow(weekNumber, year),
+  };
+}
+
 function formatWeekdayLabel(dateKey) {
   return dateKeyToDate(dateKey).toLocaleDateString(undefined, { weekday: "long" });
 }
 
-// ================= Worksheet Library (Sampling-Date-keyed archive) =================
-// One official worksheet per Sampling Date, forever (well - MAX_LIBRARY_MONTHS
-// worth). Storage shape (localStorage key "worksheetLibraryV1"):
-//   { "2026-08-10": { samplingDate, uploadDate, uploadedAt, uploader,
-//       workbookName, ticketCount, eligibleTicketCount, fingerprint,
-//       qaWeek, qaMonth, auditorAssignmentSnapshot, activeStatusSnapshot,
-//       payload } }
-const WORKSHEET_LIBRARY_KEY = "worksheetLibraryV1";
-const MAX_LIBRARY_MONTHS = 3;
+// ================= Compact Sampler Intelligence (Phase 4 & 6 Model) =================
+// Raw N-1 workbook payloads are strictly in-memory only.
+// Only tickets actually added to that day's Samples list (via Copy All Ideal Picks
+// or individual ticket Copy) become persistent Sampler Intelligence.
+// In Phase 6, samplerIntelligence is keyed on `${channel}::${ticketId}` to prevent cross-channel ID collisions.
+const SAMPLER_INTELLIGENCE_KEY = "samplerIntelligenceV1";
+const SAMPLER_DAILY_MANIFEST_KEY = "samplerDailyManifestV1";
+const SAMPLER_HISTORICAL_SUMMARIES_KEY = "samplerHistoricalSummariesV1";
+const WORKBOOK_REQUIREMENT_INTELLIGENCE_KEY = "workbookRequirementIntelligenceV1";
 
-function loadWorksheetLibrary() {
+const PERSISTENT_STORAGE_KEYS = [
+  "samplerIntelligenceV1",
+  "workbookRequirementIntelligenceV1",
+  "samplerDailyManifestV1",
+  "samplerHistoricalSummariesV1",
+  "copiedTickets",
+  "agentAssignmentsV1",
+  "agentStatusV1",
+  "agentAliasesV1",
+  "assignmentHistoryV1",
+  "watchlistItemsV1",
+];
+
+const STORAGE_BUDGET_BYTES = 5 * 1024 * 1024; // 5 MB nominal browser storage budget
+const PROACTIVE_COMPACT_THRESHOLD = 0.80; // 80% of budget (4 MB)
+
+function getSampleKey(channel, ticketId) {
+  const ch = (channel || "").trim() || "General";
+  const id = String(ticketId || "").trim();
+  return `${ch}::${id}`;
+}
+
+function getStorageUsageMetrics() {
+  let totalChars = 0;
+  let totalBytes = 0;
+  const keyBreakdown = {};
+
+  for (const key of PERSISTENT_STORAGE_KEYS) {
+    try {
+      const val = localStorage.getItem(key) || "";
+      const charLen = key.length + val.length;
+      let byteLen;
+      if (typeof TextEncoder !== "undefined") {
+        byteLen = new TextEncoder().encode(key + val).length;
+      } else {
+        byteLen = typeof Buffer !== "undefined" ? Buffer.byteLength(key + val, "utf8") : charLen * 2;
+      }
+      totalChars += charLen;
+      totalBytes += byteLen;
+      keyBreakdown[key] = { chars: charLen, bytes: byteLen, kb: (byteLen / 1024).toFixed(1) };
+    } catch {
+      keyBreakdown[key] = { chars: 0, bytes: 0, kb: "0.0" };
+    }
+  }
+
+  const usagePercent = Math.min(100, Math.round((totalBytes / STORAGE_BUDGET_BYTES) * 100));
+  const isAboveThreshold = totalBytes >= STORAGE_BUDGET_BYTES * PROACTIVE_COMPACT_THRESHOLD;
+
+  return {
+    totalBytes,
+    totalChars,
+    totalKb: (totalBytes / 1024).toFixed(1),
+    totalMb: (totalBytes / (1024 * 1024)).toFixed(2),
+    budgetBytes: STORAGE_BUDGET_BYTES,
+    budgetMb: "5.00",
+    usagePercent,
+    isAboveThreshold,
+    keyBreakdown,
+  };
+}
+
+function checkAndTriggerProactiveCompaction(force = false) {
+  const metrics = getStorageUsageMetrics();
+  if (metrics.isAboveThreshold || force) {
+    console.info(`[Sampler Storage] Proactive compaction triggered (Storage usage: ${metrics.totalMb} MB / ${metrics.usagePercent}% of budget)`);
+    // Ensure in-memory state is synchronized with storage if needed
+    if (!Object.keys(workbookRequirementIntelligence).length) {
+      workbookRequirementIntelligence = loadWorkbookRequirementIntelligence();
+    }
+    // 1. Locked reporting quarter compaction (prune individual missTickets from historical quarters)
+    const activeQuarterKey = computeQaQuarterKey(todayDateKey());
+    let popChanged = false;
+    for (const [dateKey, rec] of Object.entries(workbookRequirementIntelligence)) {
+      if (!rec) continue;
+      const recQuarter = rec.qaQuarter || computeQaQuarterKey(dateKey);
+      if (recQuarter < activeQuarterKey && rec.missTickets) {
+        delete rec.missTickets;
+        popChanged = true;
+      }
+    }
+    if (popChanged) {
+      safeStorageSetItem(WORKBOOK_REQUIREMENT_INTELLIGENCE_KEY, JSON.stringify(workbookRequirementIntelligence));
+    }
+    // 2. Prune manifests older than 60 days if storage pressure exists
+    const manifestDates = Object.keys(samplerDailyManifests).sort();
+    if (manifestDates.length > 60) {
+      const pruneCount = manifestDates.length - 60;
+      for (let i = 0; i < pruneCount; i++) {
+        delete samplerDailyManifests[manifestDates[i]];
+      }
+      safeStorageSetItem(SAMPLER_DAILY_MANIFEST_KEY, JSON.stringify(samplerDailyManifests));
+    }
+  }
+}
+
+function loadSamplerIntelligence() {
   try {
-    const data = JSON.parse(localStorage.getItem(WORKSHEET_LIBRARY_KEY) || "null");
-    return data && typeof data === "object" ? data : {};
+    const data = JSON.parse(localStorage.getItem(SAMPLER_INTELLIGENCE_KEY) || "{}");
+    if (!data || typeof data !== "object" || Array.isArray(data)) return {};
+    const migrated = {};
+    let needsSave = false;
+    for (const [key, val] of Object.entries(data)) {
+      if (!val || typeof val !== "object") continue;
+      const channel = val.channel || (key.includes("::") ? key.split("::")[0] : "General");
+      const ticketId = String(val.id || val.ticketId || (key.includes("::") ? key.split("::")[1] : key));
+      const compositeKey = getSampleKey(channel, ticketId);
+      migrated[compositeKey] = {
+        ...val,
+        id: ticketId,
+        channel: channel,
+      };
+      if (key !== compositeKey) needsSave = true;
+    }
+    if (needsSave) {
+      safeStorageSetItem(SAMPLER_INTELLIGENCE_KEY, JSON.stringify(migrated));
+    }
+    return migrated;
   } catch {
     return {};
   }
 }
 
-let worksheetLibrary = loadWorksheetLibrary();
+let samplerIntelligence = loadSamplerIntelligence();
 
-function saveWorksheetLibrary() {
-  // Keep at least 3 months, oldest-first pruning only once we're past that.
-  const monthsPresent = [...new Set(Object.keys(worksheetLibrary).map(computeQaMonthKey))].sort();
-  if (monthsPresent.length > MAX_LIBRARY_MONTHS) {
-    const keepMonths = new Set(monthsPresent.slice(-MAX_LIBRARY_MONTHS));
-    for (const dateKey of Object.keys(worksheetLibrary)) {
-      if (!keepMonths.has(computeQaMonthKey(dateKey))) delete worksheetLibrary[dateKey];
-    }
-  }
+function saveSamplerIntelligence() {
+  safeStorageSetItem(SAMPLER_INTELLIGENCE_KEY, JSON.stringify(samplerIntelligence));
+  checkAndTriggerProactiveCompaction();
+}
+
+function loadDailyManifests() {
   try {
-    localStorage.setItem(WORKSHEET_LIBRARY_KEY, JSON.stringify(worksheetLibrary));
-  } catch (error) {
-    statusEl.textContent = "Worksheet saved for this session, but local storage is full - older worksheets may need clearing.";
+    const data = JSON.parse(localStorage.getItem(SAMPLER_DAILY_MANIFEST_KEY) || "{}");
+    return data && typeof data === "object" && !Array.isArray(data) ? data : {};
+  } catch {
+    return {};
   }
 }
 
-// One-time migration: Phase 2A stored a single "officialWorksheetV1" pointer
-// with no Sampling Date concept. Fold it into the library (keyed by its best
-// guess at a Sampling Date) so nobody's existing today's-upload disappears.
-(function migrateLegacyOfficialWorksheet() {
-  if (!officialWorksheet || !officialWorksheet.payload) return;
-  const samplingDate = computeDefaultSamplingDate(officialWorksheet.date || todayDateKey());
-  if (worksheetLibrary[samplingDate]) return; // library already has something newer for that day
-  worksheetLibrary[samplingDate] = {
-    samplingDate,
-    uploadDate: officialWorksheet.date,
-    uploadedAt: officialWorksheet.uploadedAt,
-    uploader: officialWorksheet.uploaderName,
-    workbookName: officialWorksheet.workbookName,
-    ticketCount: officialWorksheet.ticketCount,
-    eligibleTicketCount: officialWorksheet.ticketCount,
-    fingerprint: officialWorksheet.fingerprint,
-    qaWeek: computeQaWeekNumber(samplingDate),
-    qaMonth: computeQaMonthKey(samplingDate),
-    auditorAssignmentSnapshot: { ...agentAssignments },
-    activeStatusSnapshot: { ...agentStatus },
-    payload: officialWorksheet.payload,
+let samplerDailyManifests = loadDailyManifests();
+
+function saveDailyManifests() {
+  // Keep up to 3 months of daily manifests (~60-70 business days)
+  const monthsPresent = [...new Set(Object.keys(samplerDailyManifests).map(computeQaMonthKey))].sort();
+  if (monthsPresent.length > 3) {
+    const keepMonths = new Set(monthsPresent.slice(-3));
+    for (const dateKey of Object.keys(samplerDailyManifests)) {
+      if (!keepMonths.has(computeQaMonthKey(dateKey))) delete samplerDailyManifests[dateKey];
+    }
+  }
+  safeStorageSetItem(SAMPLER_DAILY_MANIFEST_KEY, JSON.stringify(samplerDailyManifests));
+}
+
+function getDailyManifest(samplingDateKey) {
+  return samplerDailyManifests[samplingDateKey] || null;
+}
+
+function recordDailyManifest(manifest) {
+  samplerDailyManifests[manifest.samplingDate] = manifest;
+  saveDailyManifests();
+}
+
+function loadHistoricalSummaries() {
+  try {
+    const data = JSON.parse(localStorage.getItem(SAMPLER_HISTORICAL_SUMMARIES_KEY) || "{}");
+    return data && typeof data === "object" && !Array.isArray(data) ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+let samplerHistoricalSummaries = loadHistoricalSummaries();
+
+function saveHistoricalSummaries() {
+  safeStorageSetItem(SAMPLER_HISTORICAL_SUMMARIES_KEY, JSON.stringify(samplerHistoricalSummaries));
+}
+
+// ================= Population Requirement Intelligence =================
+// Retains compact aggregate Requirement Check analytics across ALL eligible
+// analyzed tickets in the N-1 workbook without storing raw ticket payloads.
+function loadWorkbookRequirementIntelligence() {
+  try {
+    const data = JSON.parse(localStorage.getItem(WORKBOOK_REQUIREMENT_INTELLIGENCE_KEY) || "{}");
+    return data && typeof data === "object" && !Array.isArray(data) ? data : {};
+  } catch {
+    return {};
+  }
+}
+
+let workbookRequirementIntelligence = loadWorkbookRequirementIntelligence();
+
+function saveWorkbookRequirementIntelligence() {
+  const activeQuarterKey = computeQaQuarterKey(todayDateKey());
+  for (const [dateKey, rec] of Object.entries(workbookRequirementIntelligence)) {
+    if (!rec) continue;
+    const recQuarter = rec.qaQuarter || computeQaQuarterKey(dateKey);
+    // When a quarter is completed/historical (prior to current active quarter),
+    // prune individual missTickets while permanently preserving all aggregate counts and distributions
+    if (recQuarter < activeQuarterKey && rec.missTickets) {
+      delete rec.missTickets;
+    }
+  }
+  safeStorageSetItem(WORKBOOK_REQUIREMENT_INTELLIGENCE_KEY, JSON.stringify(workbookRequirementIntelligence));
+  checkAndTriggerProactiveCompaction();
+}
+
+function recordWorkbookRequirementIntelligence(record) {
+  if (!record || !record.samplingDate) return;
+  workbookRequirementIntelligence[record.samplingDate] = record;
+  saveWorkbookRequirementIntelligence();
+}
+
+function aggregateWorkbookRequirementIntelligence(payload, samplingDateKey) {
+  const dateKey = samplingDateKey || todayDateKey();
+  const qaWeek = computeQaWeekNumber(dateKey);
+  const qaMonth = computeQaMonthKey(dateKey);
+  const qaQuarter = computeQaQuarterKey(dateKey);
+  let year = dateKeyToDate(dateKey).getFullYear();
+  const anchor = getReportingYearAnchorKey(year);
+  if (dateKey < anchor) year -= 1;
+
+  let totalAnalyzed = 0;
+  let mergedCount = 0;
+  let totalEligible = 0;
+  let cleanCount = 0;
+  const missCounts = {};
+  const channelMap = {
+    Chat: { total: 0, clean: 0, misses: {} },
+    Voice: { total: 0, clean: 0, misses: {} },
+    Email: { total: 0, clean: 0, misses: {} },
   };
-  saveWorksheetLibrary();
+  const agentMap = {};
+  const missTickets = [];
+
+  for (const agentGroup of payload.agents || []) {
+    const agentName = agentGroup.agent;
+    if (!isAgentActive(agentName)) continue;
+
+    const allAgentTickets = agentGroup.tickets || [];
+    let agentAnalyzed = allAgentTickets.length;
+    let agentMerged = 0;
+    let agentEligible = 0;
+    let agentClean = 0;
+    const agentMisses = {};
+    const agentChannels = {};
+
+    for (const ticket of allAgentTickets) {
+      totalAnalyzed += 1;
+      if (ticket.isMergedChild) {
+        mergedCount += 1;
+        agentMerged += 1;
+        continue;
+      }
+
+      totalEligible += 1;
+      agentEligible += 1;
+      const misses = getTicketMisses(ticket);
+      const isClean = misses.length === 0;
+
+      if (isClean) {
+        cleanCount += 1;
+        agentClean += 1;
+      } else {
+        for (const m of misses) {
+          missCounts[m] = (missCounts[m] || 0) + 1;
+          agentMisses[m] = (agentMisses[m] || 0) + 1;
+        }
+        missTickets.push({
+          id: String(ticket.ticketId || ticket.id),
+          agent: agentName,
+          channel: ticket.channel || "Chat",
+          misses,
+        });
+      }
+
+      const ch = ticket.channel || "Chat";
+      agentChannels[ch] = (agentChannels[ch] || 0) + 1;
+      if (channelMap[ch]) {
+        channelMap[ch].total += 1;
+        if (isClean) {
+          channelMap[ch].clean += 1;
+        } else {
+          for (const m of misses) {
+            channelMap[ch].misses[m] = (channelMap[ch].misses[m] || 0) + 1;
+          }
+        }
+      }
+    }
+
+    const agentMissed = agentEligible - agentClean;
+    agentMap[agentName] = {
+      totalAnalyzed: agentAnalyzed,
+      merged: agentMerged,
+      total: agentEligible, // Eligible Non-Merged
+      clean: agentClean,
+      missed: agentMissed,
+      cleanRate: agentEligible ? Math.round((agentClean / agentEligible) * 100) : 0,
+      missRate: agentEligible ? Math.round((agentMissed / agentEligible) * 100) : 0,
+      misses: agentMisses,
+      channels: agentChannels,
+    };
+  }
+
+  const missedCount = totalEligible - cleanCount;
+  const cleanRate = totalEligible ? Math.round((cleanCount / totalEligible) * 100) : 0;
+  const missRate = totalEligible ? Math.round((missedCount / totalEligible) * 100) : 0;
+
+  return {
+    samplingDate: dateKey,
+    qaWeek,
+    qaMonth,
+    qaQuarter,
+    reportingYear: year,
+    totalAnalyzed,
+    mergedCount,
+    totalEligible,
+    cleanCount,
+    missedCount,
+    cleanRate,
+    missRate,
+    misses: missCounts,
+    channels: channelMap,
+    agents: agentMap,
+    missTickets,
+    aggregatedAt: new Date().toISOString(),
+  };
+}
+
+function rollupPopulationRequirementIntelligence(records) {
+  if (!records || !records.length) {
+    return {
+      hasData: false,
+      totalAnalyzed: 0,
+      mergedCount: 0,
+      totalEligible: 0,
+      cleanCount: 0,
+      missedCount: 0,
+      cleanRate: 0,
+      missRate: 0,
+      misses: [],
+      channels: {
+        Chat: { total: 0, clean: 0, cleanRate: 0, missRate: 0, misses: [] },
+        Voice: { total: 0, clean: 0, cleanRate: 0, missRate: 0, misses: [] },
+        Email: { total: 0, clean: 0, cleanRate: 0, missRate: 0, misses: [] },
+      },
+      agents: {},
+      missTickets: [],
+    };
+  }
+
+  let totalAnalyzed = 0;
+  let mergedCount = 0;
+  let totalEligible = 0;
+  let cleanCount = 0;
+  const missCounts = {};
+  const channelTotals = {
+    Chat: { total: 0, clean: 0, misses: {} },
+    Voice: { total: 0, clean: 0, misses: {} },
+    Email: { total: 0, clean: 0, misses: {} },
+  };
+  const agentTotals = {};
+  const allMissTickets = [];
+
+  for (const rec of records) {
+    totalAnalyzed += rec.totalAnalyzed || (rec.totalEligible || 0) + (rec.mergedCount || 0);
+    mergedCount += rec.mergedCount || 0;
+    totalEligible += rec.totalEligible || 0;
+    cleanCount += rec.cleanCount || 0;
+
+    if (Array.isArray(rec.missTickets)) {
+      for (const mt of rec.missTickets) {
+        allMissTickets.push({
+          id: String(mt.id || mt.ticketId || ""),
+          agent: mt.agent || "",
+          channel: mt.channel || "Chat",
+          date: mt.date || rec.samplingDate,
+          year: mt.year || rec.reportingYear || (rec.qaQuarter ? Number(rec.qaQuarter.slice(0, 4)) : dateKeyToDate(rec.samplingDate).getFullYear()),
+          week: mt.week !== undefined ? mt.week : rec.qaWeek,
+          month: mt.month || rec.qaMonth,
+          quarter: mt.quarter || rec.qaQuarter,
+          misses: mt.misses || [],
+          missCount: mt.missCount !== undefined ? mt.missCount : (mt.misses || []).length,
+          checks: mt.checks || mt.misses || [],
+        });
+      }
+    }
+
+    for (const [m, count] of Object.entries(rec.misses || {})) {
+      missCounts[m] = (missCounts[m] || 0) + count;
+    }
+
+    for (const [ch, chData] of Object.entries(rec.channels || {})) {
+      if (channelTotals[ch]) {
+        channelTotals[ch].total += chData.total || 0;
+        channelTotals[ch].clean += chData.clean || 0;
+        for (const [m, count] of Object.entries(chData.misses || {})) {
+          channelTotals[ch].misses[m] = (channelTotals[ch].misses[m] || 0) + count;
+        }
+      }
+    }
+
+    for (const [agent, aData] of Object.entries(rec.agents || {})) {
+      if (!agentTotals[agent]) {
+        agentTotals[agent] = {
+          totalAnalyzed: 0,
+          merged: 0,
+          total: 0,
+          clean: 0,
+          missed: 0,
+          misses: {},
+          channels: {},
+        };
+      }
+      agentTotals[agent].totalAnalyzed += aData.totalAnalyzed || (aData.total || 0) + (aData.merged || 0);
+      agentTotals[agent].merged += aData.merged || 0;
+      agentTotals[agent].total += aData.total || 0;
+      agentTotals[agent].clean += aData.clean || 0;
+      agentTotals[agent].missed += aData.missed || 0;
+      for (const [m, count] of Object.entries(aData.misses || {})) {
+        agentTotals[agent].misses[m] = (agentTotals[agent].misses[m] || 0) + count;
+      }
+      for (const [c, count] of Object.entries(aData.channels || {})) {
+        agentTotals[agent].channels[c] = (agentTotals[agent].channels[c] || 0) + count;
+      }
+    }
+  }
+
+  const missedCount = totalEligible - cleanCount;
+  const cleanRate = totalEligible ? Math.round((cleanCount / totalEligible) * 100) : 0;
+  const missRate = totalEligible ? Math.round((missedCount / totalEligible) * 100) : 0;
+
+  const missList = Object.entries(missCounts)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([name, count]) => ({
+      name,
+      count,
+      rate: totalEligible ? Math.round((count / totalEligible) * 100) : 0,
+      severity: count >= 5 || (count / Math.max(totalEligible, 1)) >= 0.25 ? "Regular default" : "Occasional",
+    }));
+
+  const channelBreakdown = {};
+  for (const [ch, chData] of Object.entries(channelTotals)) {
+    const chCleanRate = chData.total ? Math.round((chData.clean / chData.total) * 100) : 0;
+    const chMissRate = chData.total ? Math.round(((chData.total - chData.clean) / chData.total) * 100) : 0;
+    channelBreakdown[ch] = {
+      channel: ch,
+      total: chData.total,
+      clean: chData.clean,
+      cleanRate: chCleanRate,
+      missRate: chMissRate,
+      misses: Object.entries(chData.misses)
+        .map(([name, count]) => ({ name, count, rate: chData.total ? Math.round((count / chData.total) * 100) : 0 }))
+        .sort((a, b) => b.count - a.count),
+    };
+  }
+
+  const agentBreakdown = {};
+  for (const [agent, aData] of Object.entries(agentTotals)) {
+    const aCleanRate = aData.total ? Math.round((aData.clean / aData.total) * 100) : 0;
+    const aMissRate = aData.total ? Math.round((aData.missed / aData.total) * 100) : 0;
+    agentBreakdown[agent] = {
+      agent,
+      totalAnalyzed: aData.totalAnalyzed,
+      merged: aData.merged,
+      total: aData.total, // Eligible Non-Merged
+      clean: aData.clean,
+      missed: aData.missed,
+      cleanRate: aCleanRate,
+      missRate: aMissRate,
+      channels: aData.channels,
+      misses: Object.entries(aData.misses)
+        .map(([name, count]) => ({ name, count }))
+        .sort((a, b) => b.count - a.count),
+    };
+  }
+
+  return {
+    hasData: true,
+    totalAnalyzed,
+    mergedCount,
+    totalEligible,
+    cleanCount,
+    missedCount,
+    cleanRate,
+    missRate,
+    misses: missList,
+    channels: channelBreakdown,
+    agents: agentBreakdown,
+    missTickets: allMissTickets,
+  };
+}
+
+function extractSampledRecord(pick) {
+  const tid = pick?.ticketId || pick?.id;
+  if (!pick || !tid) return null;
+  return {
+    id: String(tid),
+    date: normalizeDateKey(pick.date) || todayDateKey(),
+    agent: pick.agent || "Unknown",
+    auditor: pick.auditor || AGENT_TO_AUDITOR[pick.agent] || activeAuditor || "Unknown",
+    channel: pick.channel || "Chat",
+    misses: getTicketMisses(pick),
+    subject: pick.subject || "",
+    module: pick.module || "",
+    feature: pick.feature || "",
+    score: pick.score ?? null,
+    copiedAt: new Date().toISOString(),
+  };
+}
+
+function recordSampledTicket(pick) {
+  const record = extractSampledRecord(pick);
+  if (!record) return;
+  const key = getSampleKey(record.channel, record.id);
+  samplerIntelligence[key] = record;
+  saveSamplerIntelligence();
+  updateManifestSampledCount(record.date);
+}
+
+function recordSampledTickets(picks) {
+  let changed = false;
+  const dates = new Set();
+  for (const pick of picks) {
+    const record = extractSampledRecord(pick);
+    if (!record) continue;
+    const key = getSampleKey(record.channel, record.id);
+    samplerIntelligence[key] = record;
+    dates.add(record.date);
+    changed = true;
+  }
+  if (changed) {
+    saveSamplerIntelligence();
+    for (const d of dates) updateManifestSampledCount(d);
+  }
+}
+
+function removeSampledTicket(channelOrKey, ticketId) {
+  let key;
+  if (ticketId !== undefined && ticketId !== null) {
+    key = getSampleKey(channelOrKey, ticketId);
+  } else {
+    key = String(channelOrKey || "");
+  }
+  let target = samplerIntelligence[key];
+  if (!target && !key.includes("::")) {
+    for (const [k, v] of Object.entries(samplerIntelligence)) {
+      if (v.id === key) {
+        key = k;
+        target = v;
+        break;
+      }
+    }
+  }
+  if (target) {
+    const d = target.date;
+    delete samplerIntelligence[key];
+    saveSamplerIntelligence();
+    if (d) updateManifestSampledCount(d);
+  }
+}
+
+function hasCopiedTicket(channel, ticketId) {
+  const compKey = getSampleKey(channel, ticketId);
+  const bareId = String(ticketId || "");
+  return Boolean(samplerIntelligence[compKey] || samplerIntelligence[bareId] || copiedTickets.has(compKey) || copiedTickets.has(bareId));
+}
+
+function updateManifestSampledCount(dateKey) {
+  if (!dateKey) return;
+  const manifest = samplerDailyManifests[dateKey];
+  if (!manifest) return;
+  const count = Object.values(samplerIntelligence).filter((t) => t.date === dateKey).length;
+  manifest.sampledTicketCount = count;
+  saveDailyManifests();
+}
+
+// One-time migration: Convert legacy data into compact Sampler Intelligence
+(function migrateLegacyStorage() {
+  try {
+    const version = localStorage.getItem("samplerStorageVersion");
+    if (version === "4.0") return;
+
+    // 1. Migrate actually copied tickets from n1TicketHistoryV1 + copiedTickets
+    const legacyHistory = JSON.parse(localStorage.getItem("n1TicketHistoryV1") || "null");
+    const legacyCopied = JSON.parse(localStorage.getItem("copiedTickets") || "[]");
+    const copiedSet = new Set(Array.isArray(legacyCopied) ? legacyCopied.map(String) : []);
+
+    if (legacyHistory && typeof legacyHistory === "object") {
+      for (const [id, ticket] of Object.entries(legacyHistory)) {
+        if (copiedSet.has(String(id))) {
+          if (!samplerIntelligence[id]) {
+            samplerIntelligence[id] = {
+              id: String(ticket.ticketId || id),
+              date: ticket.date || todayDateKey(),
+              agent: ticket.agent || "Unknown",
+              auditor: ticket.auditor || "Unknown",
+              channel: ticket.channel || "Chat",
+              misses: getTicketMisses(ticket),
+              subject: ticket.subject || "",
+              module: ticket.module || "",
+              feature: ticket.feature || "",
+              score: ticket.score ?? null,
+              copiedAt: ticket.uploadedAt || new Date().toISOString(),
+            };
+          }
+        }
+      }
+      saveSamplerIntelligence();
+    }
+
+    // 2. Migrate daily upload manifests from worksheetLibraryV1 (metadata only, strip payload)
+    const legacyLibrary = JSON.parse(localStorage.getItem("worksheetLibraryV1") || "null");
+    if (legacyLibrary && typeof legacyLibrary === "object") {
+      for (const [dateKey, record] of Object.entries(legacyLibrary)) {
+        if (!samplerDailyManifests[dateKey]) {
+          samplerDailyManifests[dateKey] = {
+            samplingDate: record.samplingDate || dateKey,
+            uploadDate: record.uploadDate || dateKey,
+            uploadedAt: record.uploadedAt || new Date().toISOString(),
+            uploader: record.uploader || record.uploaderName || "Unknown",
+            workbookName: record.workbookName || "Workbook",
+            totalWorkbookRows: record.ticketCount || 0,
+            eligibleTicketCount: record.eligibleTicketCount || record.ticketCount || 0,
+            sampledTicketCount: Object.values(samplerIntelligence).filter((t) => t.date === dateKey).length,
+            fingerprint: record.fingerprint || "",
+            qaWeek: record.qaWeek || computeQaWeekNumber(dateKey),
+            qaMonth: record.qaMonth || computeQaMonthKey(dateKey),
+          };
+        }
+      }
+      saveDailyManifests();
+    }
+
+    // 3. Atomically remove bloated legacy storage keys
+    localStorage.removeItem("n1TicketHistoryV1");
+    localStorage.removeItem("worksheetLibraryV1");
+    localStorage.removeItem("officialWorksheetV1");
+    safeStorageSetItem("samplerStorageVersion", "4.0");
+  } catch (err) {
+    console.warn("Storage migration warning:", err);
+  }
 })();
 
 function countEligibleTickets(payload) {
@@ -509,10 +1384,6 @@ function countEligibleTickets(payload) {
     (sum, agent) => sum + agent.tickets.filter((ticket) => !ticket.isMergedChild && isAgentActive(agent.agent)).length,
     0,
   );
-}
-
-function getOfficialWorksheetFor(samplingDateKey) {
-  return worksheetLibrary[samplingDateKey] || null;
 }
 
 function formatWorksheetDateLabel(dateKey) {
@@ -527,23 +1398,69 @@ function formatWorksheetTimeLabel(iso) {
   return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-let viewingHistorical = null; // { samplingDate } | null - set while browsing the library read-only
+let viewingHistorical = null; // { samplingDate } | null
 
 function renderTodayCard() {
   const el = document.querySelector("#todayCard");
   if (!el) return;
   const todaySamplingDate = computeDefaultSamplingDate(todayDateKey());
-  const record = getOfficialWorksheetFor(todaySamplingDate);
+  const manifest = getDailyManifest(activeSessionDate || todaySamplingDate);
 
-  if (!record) {
+  const uploadIcon = `<svg class="app-icon icon-upload" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const libraryIcon = `<svg class="app-icon icon-library" viewBox="0 0 24 24" fill="none"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5ZM4 6h16M4 10h16M4 14h16" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const resetIcon = `<svg class="app-icon icon-refresh" viewBox="0 0 24 24" fill="none"><path d="M3 12a9 9 0 0 1 15.5-6.4L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.5 6.4L3 16M3 21v-5h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+  const availableDates = Object.keys(recentSharedSessions).sort((a, b) => b.localeCompare(a));
+
+  if (currentPayload) {
+    const totalRows = currentPayload.sheets?.reduce((s, sh) => s + (sh.rows || 0), 0) || 0;
+    const currentSamplingDate = activeSessionDate || currentPayload?.metadata?.samplingDate || todaySamplingDate;
+
+    let daySwitcherHtml = "";
+    if (availableDates.length > 1) {
+      daySwitcherHtml = `
+        <div class="session-day-segmented" role="tablist" aria-label="Switch Sampling Day">
+          ${availableDates.map((d, idx) => {
+            const isSelected = (d === activeSessionDate || (!activeSessionDate && idx === 0));
+            const weekday = formatWeekdayLabel(d);
+            const isCurrent = d === todaySamplingDate;
+            const label = isCurrent ? `${weekday} (Current)` : `${weekday} Sample`;
+            return `<button type="button" class="session-day-btn ${isSelected ? "active" : ""}" data-switch-session-date="${escapeHtml(d)}" title="${escapeHtml(weekday)} Sample (${escapeHtml(d)})">
+              <span>${escapeHtml(label)}</span>
+            </button>`;
+          }).join("")}
+        </div>
+      `;
+    }
+
     el.innerHTML = `
       <div class="today-card-info">
-        <strong>No official worksheet for ${escapeHtml(formatWeekdayLabel(todaySamplingDate))} Sample yet.</strong>
-        <span>Upload the worksheet to begin sampling.</span>
+        <div class="session-badge-wrap">
+          <span class="session-badge">Active Sampling Session</span>
+          ${daySwitcherHtml}
+        </div>
+        <strong class="session-title">${escapeHtml(formatWeekdayLabel(currentSamplingDate))} Sample</strong>
+        <span class="session-meta">${totalRows.toLocaleString()} tickets analyzed &middot; 4 Auditors &middot; Shared Daily Session</span>
       </div>
       <div class="today-card-actions">
-        <button type="button" class="primary-action" data-upload-new>Upload Worksheet</button>
-        <button type="button" class="ops-action-inline" data-open-library>Worksheet Library</button>
+        <button type="button" class="primary-action" data-upload-new>${uploadIcon} <span>Upload New Workbook</span></button>
+        <button type="button" class="secondary-action" data-open-library>${libraryIcon} <span>Worksheet Library</span></button>
+        <button type="button" class="danger-btn-outline small" data-trigger-reset-workbook style="margin-left: 4px;">${resetIcon} <span>Reset Current Workbook</span></button>
+      </div>
+    `;
+    return;
+  }
+
+  if (!manifest) {
+    el.innerHTML = `
+      <div class="today-card-info">
+        <span class="session-badge">Sampling Session</span>
+        <strong class="session-title">${escapeHtml(formatWeekdayLabel(todaySamplingDate))} Sample</strong>
+        <span class="session-meta">No active shared session uploaded for ${escapeHtml(formatWeekdayLabel(todaySamplingDate))} yet. Upload a workbook to start sampling.</span>
+      </div>
+      <div class="today-card-actions">
+        <button type="button" class="primary-action" data-upload-new>${uploadIcon} <span>Upload Worksheet</span></button>
+        <button type="button" class="secondary-action" data-open-library>${libraryIcon} <span>Worksheet Library</span></button>
       </div>
     `;
     return;
@@ -551,16 +1468,13 @@ function renderTodayCard() {
 
   el.innerHTML = `
     <div class="today-card-info">
-      <strong>Today's Official Sample</strong>
-      <span>${escapeHtml(formatWeekdayLabel(record.samplingDate))} Sample</span>
-      <span>Sampling Date: ${escapeHtml(formatWorksheetDateLabel(record.samplingDate))}</span>
-      <span>Uploaded: ${escapeHtml(formatWorksheetDateLabel(record.uploadDate))} &middot; ${escapeHtml(formatWorksheetTimeLabel(record.uploadedAt))}</span>
-      <span>${record.uploader ? `Uploader: ${escapeHtml(record.uploader)}` : "Uploader: Unknown"} &middot; ${record.ticketCount} tickets</span>
+      <span class="session-badge">Official Record</span>
+      <strong class="session-title">${escapeHtml(formatWeekdayLabel(manifest.samplingDate))} Sample</strong>
+      <span class="session-meta">${(manifest.totalWorkbookRows || 0).toLocaleString()} tickets analyzed &middot; ${manifest.sampledTicketCount || 0} sampled picks</span>
     </div>
     <div class="today-card-actions">
-      <button type="button" class="primary-action" data-open-today>Open Today's Sample</button>
-      <button type="button" class="ops-action-inline" data-open-library>Worksheet Library</button>
-      <button type="button" class="ops-action-inline small" data-upload-new>Upload Worksheet</button>
+      <button type="button" class="primary-action" data-upload-new>${uploadIcon} <span>Upload New Workbook</span></button>
+      <button type="button" class="secondary-action" data-open-library>${libraryIcon} <span>Worksheet Library</span></button>
     </div>
   `;
 }
@@ -572,29 +1486,28 @@ function renderHistoricalBanner() {
     el.innerHTML = "";
     return;
   }
-  const record = getOfficialWorksheetFor(viewingHistorical.samplingDate);
-  if (!record) {
+  const manifest = getDailyManifest(viewingHistorical.samplingDate);
+  if (!manifest) {
     el.innerHTML = "";
     return;
   }
   el.innerHTML = `
     <div class="session-banner">
       <div>
-        <strong>Viewing Historical Worksheet</strong>
-        <span>${escapeHtml(formatWeekdayLabel(record.samplingDate))} Sample &middot; ${escapeHtml(formatWorksheetDateLabel(record.samplingDate))} &middot; Week ${record.qaWeek}</span>
+        <strong>Viewing Historical Sampling Record</strong>
+        <span>${escapeHtml(formatWeekdayLabel(manifest.samplingDate))} Sample &middot; ${escapeHtml(formatWorksheetDateLabel(manifest.samplingDate))} &middot; Week ${manifest.qaWeek}</span>
       </div>
       <div class="session-banner-actions">
-        <button type="button" class="ops-action-inline" data-exit-historical>Back to Today's Sample</button>
+        <button type="button" class="ops-action-inline" data-exit-historical>Back</button>
       </div>
     </div>
   `;
 }
 
-// Shared by "fresh upload", "Open Today's Sample", historical browsing, and
-// "Keep Existing" - the only ways a payload ever becomes the active dataset.
+// Shared by "fresh upload" and active sessions - the only way a payload becomes active dataset.
 function activatePayload(payload, statusText) {
   currentPayload = payload;
-  reassignCurrentPayloadAuditors(); // picks up any assignment/status changes since this was stored
+  reassignCurrentPayloadAuditors();
   currentChannel = "All";
   expandedAgent = null;
   document.querySelectorAll("[data-channel]").forEach((button) => {
@@ -602,37 +1515,115 @@ function activatePayload(payload, statusText) {
   });
   controlsEl.hidden = false;
   auditorTabsEl.hidden = false;
-  activeAuditor = AUDITORS[0]?.name || null;
+  const savedPref = localStorage.getItem("preferredAuditor");
+  if (savedPref && (savedPref === "All" || AUDITORS.some((a) => a.name === savedPref))) {
+    activeAuditor = savedPref;
+  } else {
+    activeAuditor = "All";
+  }
   renderAuditorTabs();
   statusEl.textContent = statusText;
   render();
 }
 
-function openHistoricalWorksheet(samplingDateKey) {
-  const record = getOfficialWorksheetFor(samplingDateKey);
-  if (!record) return;
-  viewingHistorical = { samplingDate: samplingDateKey };
-  activatePayload(record.payload, `Viewing historical worksheet (read-only) - ${formatWeekdayLabel(samplingDateKey)} Sample.`);
-  renderHistoricalBanner();
+async function openHistoricalWorksheet(samplingDateKey) {
+  const manifest = getDailyManifest(samplingDateKey);
+  if (!manifest) return;
+
+  // 1. Check if the full raw payload is in the active business-day session cache
+  let session = recentSharedSessions[samplingDateKey];
+  if (!session && typeof window !== "undefined" && window.location?.protocol?.startsWith("http")) {
+    try {
+      const res = await fetch(`/api/session/day?date=${encodeURIComponent(samplingDateKey)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.success && data?.session?.payload) {
+          recentSharedSessions[samplingDateKey] = data.session;
+          session = data.session;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Case A: Full raw payload available in active business-day cache -> Open FULL interactive dashboard
+  if (session?.payload) {
+    closeOpsModal();
+    activeSessionDate = samplingDateKey;
+    if (session.manifest) recordDailyManifest(session.manifest);
+    if (session.reqIntel) recordWorkbookRequirementIntelligence(session.reqIntel);
+    viewingHistorical = { samplingDate: samplingDateKey };
+    activatePayload(session.payload, `Viewing ${formatWeekdayLabel(samplingDateKey)} Sample.`);
+    renderTodayCard();
+    renderHistoricalBanner();
+    return;
+  }
+
+  // Case B: Outside active business-day cache -> Fall back to compact sampled picks view
+  const dayPicks = Object.values(samplerIntelligence).filter((t) => t.date === samplingDateKey);
   closeOpsModal();
+  openHistoricalSampledModal(manifest, dayPicks);
+}
+
+function openHistoricalSampledModal(manifest, dayPicks) {
+  document.querySelector("[data-historical-modal]")?.remove();
+  const weekday = formatWeekdayLabel(manifest.samplingDate);
+  const modal = document.createElement("div");
+  modal.className = "modal-backdrop";
+  modal.dataset.historicalModal = "true";
+
+  const rows = dayPicks.length
+    ? dayPicks
+        .map((pick) => {
+          const misses = getTicketMisses(pick);
+          return `
+            <tr>
+              <td>${renderTicketLink(pick.id)}</td>
+              <td>${escapeHtml(pick.agent)}</td>
+              <td>${escapeHtml(pick.channel)}</td>
+              <td>${escapeHtml(pick.subject || "-")}</td>
+              <td>${escapeHtml(pick.module || "-")}</td>
+              <td class="checks">
+                ${misses.length ? misses.map((m) => `<span class="check-pill fail">&#10007; ${escapeHtml(m)}</span>`).join("") : `<span class="check-pill pass">&#10003; Clean</span>`}
+              </td>
+            </tr>
+          `;
+        })
+        .join("")
+    : `<tr><td colspan="6" class="empty">No picks were sampled/copied for this date.</td></tr>`;
+
+  modal.innerHTML = `
+    <section class="metric-modal" role="dialog" aria-modal="true" aria-label="Sampled Intelligence - ${escapeHtml(weekday)}">
+      <header>
+        <div>
+          <strong>${escapeHtml(weekday)} Sample &middot; ${escapeHtml(formatWorksheetDateLabel(manifest.samplingDate))}</strong>
+          <span>Uploaded by ${escapeHtml(manifest.uploader || "Unknown")} on ${escapeHtml(formatWorksheetDateLabel(manifest.uploadDate))} &middot; ${dayPicks.length} sampled picks</span>
+        </div>
+        <button type="button" data-close-modal>&times;</button>
+      </header>
+      <div class="modal-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Ticket ID</th>
+              <th>Agent</th>
+              <th>Channel</th>
+              <th>Subject</th>
+              <th>Module</th>
+              <th>Requirement Check</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </section>
+  `;
+  document.body.appendChild(modal);
 }
 
 function exitHistoricalView() {
   viewingHistorical = null;
-  const todaySamplingDate = computeDefaultSamplingDate(todayDateKey());
-  const record = getOfficialWorksheetFor(todaySamplingDate);
-  if (record) {
-    activatePayload(record.payload, "Back to today's official sample.");
-  } else {
-    currentPayload = null;
-    controlsEl.hidden = true;
-    auditorTabsEl.hidden = true;
-    summaryEl.innerHTML = "";
-    metricsEl.innerHTML = "";
-    resultsEl.innerHTML = "";
-    statusEl.textContent = "No official worksheet for today yet.";
-  }
   renderHistoricalBanner();
+  renderTodayCard();
 }
 
 // Confirms a Sampling Date for a freshly-parsed upload before it's saved.
@@ -743,6 +1734,91 @@ function getBusinessDaysInMonth(monthKey) {
   return days;
 }
 
+
+function openDeleteWorksheetConfirmModal(samplingDateKey) {
+  const manifest = samplerDailyManifests[samplingDateKey];
+  const weekday = formatWeekdayLabel(samplingDateKey);
+  const dateLabel = formatWorksheetDateLabel(samplingDateKey);
+
+  openOpsModal(
+    "Delete Worksheet Record?",
+    `Are you sure you want to delete the ${weekday} Sample record for ${dateLabel}?`,
+    `
+      <div style="padding: 16px 0;">
+        <p style="margin-bottom: 12px; font-size: 13.5px; color: var(--text-secondary); line-height: 1.5;">
+          This will permanently remove the official worksheet record, requirement intelligence, and sampled picks for <strong>${escapeHtml(dateLabel)}</strong> (${escapeHtml(weekday)} Sample).
+        </p>
+        <p style="margin-bottom: 18px; font-size: 12.5px; color: var(--color-danger); font-weight: 500;">
+          This action cannot be undone.
+        </p>
+        <div class="assign-actions" style="justify-content: flex-end; gap: 10px;">
+          <button type="button" class="secondary-action" data-cancel-delete-worksheet>Cancel</button>
+          <button type="button" class="danger-btn-outline" data-confirm-delete-worksheet="${escapeHtml(samplingDateKey)}">Delete Worksheet</button>
+        </div>
+      </div>
+    `
+  );
+}
+
+function executeDeleteWorksheet(samplingDateKey) {
+  triggerHapticPulse();
+  const dateKey = normalizeDateKey(samplingDateKey);
+  if (!dateKey) return;
+
+  // 1. Delete official daily manifest
+  if (samplerDailyManifests[dateKey]) {
+    delete samplerDailyManifests[dateKey];
+    safeStorageSetItem(SAMPLER_DAILY_MANIFEST_KEY, JSON.stringify(samplerDailyManifests));
+  }
+
+  // 2. Delete requirement intelligence
+  if (workbookRequirementIntelligence[dateKey]) {
+    delete workbookRequirementIntelligence[dateKey];
+    safeStorageSetItem(WORKBOOK_REQUIREMENT_INTELLIGENCE_KEY, JSON.stringify(workbookRequirementIntelligence));
+  }
+
+  // 3. Delete sampled intelligence & copied picks for this date
+  for (const [k, pick] of Object.entries(samplerIntelligence)) {
+    if (normalizeDateKey(pick.date) === dateKey) {
+      delete samplerIntelligence[k];
+      copiedTickets.delete(k);
+      copiedTickets.delete(pick.id || pick.ticketId);
+    }
+  }
+  safeStorageSetItem(SAMPLER_INTELLIGENCE_KEY, JSON.stringify(samplerIntelligence));
+  safeStorageSetItem("copiedTickets", JSON.stringify([...copiedTickets]));
+
+  // 4. Delete the current active N-1 session data if it matches this date or if it is the active workbook
+  const currentSamplingDate = normalizeDateKey(currentPayload?.metadata?.samplingDate);
+  const todaySamplingDate = computeDefaultSamplingDate(todayDateKey());
+  
+  if (currentPayload && (currentSamplingDate === dateKey || (!currentSamplingDate && dateKey === todaySamplingDate))) {
+    currentPayload = null;
+    allTickets = [];
+    viewingHistorical = null;
+    rejectedTickets.clear();
+    rejectedPatternCounts = {};
+    safeStorageSetItem("rejectedTicketsV1", JSON.stringify([]));
+    safeStorageSetItem("rejectedPatternCountsV1", JSON.stringify({}));
+    
+    statusEl.textContent = "Waiting for a daily sampling workbook.";
+    controlsEl.hidden = true;
+    auditorTabsEl.hidden = true;
+    summaryEl.innerHTML = "";
+    metricsEl.innerHTML = "";
+    resultsEl.innerHTML = "";
+    syncDailySessionResetToServer();
+  }
+
+  if (viewingHistorical?.samplingDate === dateKey) {
+    viewingHistorical = null;
+  }
+
+  renderTodayCard();
+  renderHistoricalBanner();
+  openWorksheetLibraryModal();
+}
+
 function openWorksheetLibraryModal() {
   libraryVisibleMonth = computeQaMonthKey(computeDefaultSamplingDate(todayDateKey()));
   openOpsModal(
@@ -776,28 +1852,44 @@ function renderWorksheetLibraryPanel() {
   const isFutureMonth = monthKey > todayMonth;
   const countableDays = isFutureMonth ? [] : monthKey === todayMonth ? businessDays.filter((d) => d <= todaySamplingDate) : businessDays;
   const countableSet = new Set(countableDays);
-  const uploadedCountableDays = countableDays.filter((d) => worksheetLibrary[d]);
+  const uploadedCountableDays = countableDays.filter((d) => samplerDailyManifests[d]);
   const readinessPct = countableDays.length ? Math.round((uploadedCountableDays.length / countableDays.length) * 100) : 0;
 
   const weekSections = [...weeks.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([weekNumber, days]) => {
       const weekCountable = days.filter((d) => countableSet.has(d));
-      const weekUploaded = weekCountable.filter((d) => worksheetLibrary[d]);
+      const weekUploaded = weekCountable.filter((d) => samplerDailyManifests[d]);
       const weekPct = weekCountable.length ? Math.round((weekUploaded.length / weekCountable.length) * 100) : null;
 
       const dayCards = days
         .map((dateKey) => {
-          const record = worksheetLibrary[dateKey];
+          const manifest = samplerDailyManifests[dateKey];
           const weekday = formatWeekdayLabel(dateKey);
-          if (record) {
+          if (manifest) {
+            const sampledCount = Object.values(samplerIntelligence).filter((t) => t.date === dateKey).length;
+            const isFullDataAvailable = Boolean(recentSharedSessions[dateKey]);
+            const availabilityBadge = isFullDataAvailable
+              ? `<span class="library-status-pill full">Full Interactive Data</span>`
+              : `<span class="library-status-pill compact">Compact Record</span>`;
+
             return `
-              <button type="button" class="worksheet-day-card has-data" data-open-historical="${dateKey}">
-                <strong>${escapeHtml(weekday)} Sample &#10003;</strong>
-                <span>Sampling Date: ${escapeHtml(formatWorksheetDateLabel(dateKey))}</span>
-                <span>Uploaded: ${escapeHtml(formatWorksheetDateLabel(record.uploadDate))} &middot; ${escapeHtml(formatWorksheetTimeLabel(record.uploadedAt))}</span>
-                <span>${record.uploader ? `Uploader: ${escapeHtml(record.uploader)}` : "Uploader: Unknown"} &middot; ${record.ticketCount} tickets</span>
-              </button>
+              <div class="worksheet-day-card-wrap">
+                <button type="button" class="worksheet-day-card has-data ${isFullDataAvailable ? "has-full-data" : ""}" data-open-historical="${dateKey}">
+                  <div class="worksheet-day-card-header">
+                    <strong>${escapeHtml(weekday)} Sample &#10003;</strong>
+                    ${availabilityBadge}
+                  </div>
+                  <span>Sampling Date: ${escapeHtml(formatWorksheetDateLabel(dateKey))}</span>
+                  <span>Uploaded: ${escapeHtml(formatWorksheetDateLabel(manifest.uploadDate))} &middot; ${escapeHtml(formatWorksheetTimeLabel(manifest.uploadedAt))}</span>
+                  <span>${manifest.uploader ? `Uploader: ${escapeHtml(manifest.uploader)}` : "Uploader: Unknown"} &middot; ${(manifest.totalWorkbookRows || manifest.ticketCount || 0).toLocaleString()} tickets &middot; ${sampledCount} picks</span>
+                </button>
+                <div class="worksheet-card-actions">
+                  <button type="button" class="worksheet-delete-btn" data-delete-worksheet="${dateKey}" title="Delete ${escapeHtml(weekday)} Sample record">
+                    &times; Delete Worksheet
+                  </button>
+                </div>
+              </div>
             `;
           }
           const isMissing = countableSet.has(dateKey);
@@ -836,6 +1928,39 @@ function renderWorksheetLibraryPanel() {
       }
     </div>
     <div class="worksheet-library-weeks">${weekSections || `<div class="empty">No business days in this month.</div>`}</div>
+    ${renderStorageHealthSection()}
+  `;
+}
+
+function renderStorageHealthSection() {
+  const metrics = getStorageUsageMetrics();
+  const statusColor = metrics.isAboveThreshold ? "var(--coral-primary)" : "var(--teal-secondary)";
+  const statusText = metrics.isAboveThreshold ? "Proactive Compaction Recommended (Usage >80%)" : "Optimal (Well within safety budget)";
+
+  return `
+    <div class="storage-health-card" style="margin-top: 24px; padding: 16px; background: var(--surface-secondary); border: 1px solid var(--separator-medium); border-radius: var(--radius-md);">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <div>
+          <strong style="font-size: 13px; color: var(--text-primary); display: flex; align-items: center; gap: 6px;">
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${statusColor};"></span>
+            Persistent Storage Health & Diagnostics
+          </strong>
+          <span style="display: block; font-size: 12px; color: var(--text-secondary); margin-top: 2px;">
+            Browser LocalStorage Quota Budget: ${metrics.budgetMb} MB &middot; Currently Used: <strong>${metrics.totalMb} MB</strong> (${metrics.usagePercent}%)
+          </span>
+        </div>
+        <button type="button" class="ops-action-inline" data-storage-action="run-compaction" style="padding: 6px 12px; font-size: 12px; border-radius: var(--radius-pill);">
+          Run Proactive Compaction
+        </button>
+      </div>
+      <div style="background: var(--color-surface-tertiary); height: 6px; border-radius: 9999px; margin: 12px 0; overflow: hidden;">
+        <div style="width: ${Math.min(100, Math.max(2, metrics.usagePercent))}%; background: ${metrics.usagePercent > 80 ? "var(--gradient-coral-action)" : "var(--teal-secondary)"}; height: 100%; border-radius: 9999px; transition: width 0.3s ease;"></div>
+      </div>
+      <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-tertiary); flex-wrap: wrap; gap: 6px;">
+        <span>Status: <strong style="color: ${statusColor};">${statusText}</strong></span>
+        <span>Requirement Intel: ${metrics.keyBreakdown.workbookRequirementIntelligenceV1?.kb || "0"} KB &middot; Copied Samples: ${metrics.keyBreakdown.samplerIntelligenceV1?.kb || "0"} KB &middot; Manifests: ${metrics.keyBreakdown.samplerDailyManifestV1?.kb || "0"} KB</span>
+      </div>
+    </div>
   `;
 }
 
@@ -948,6 +2073,189 @@ function submitAddAgentForm() {
   refreshAssignAgentsPanel();
 }
 
+// ================= Rename Agent =================
+function renameAgent(oldName, newName) {
+  const oldClean = clean(oldName);
+  const newClean = clean(newName);
+  if (!oldClean || !newClean || oldClean === newClean) return false;
+
+  // Check for collision against another existing agent (excluding oldName)
+  const existing = findExistingAgentName(newClean);
+  if (existing && normalizeName(existing) !== normalizeName(oldClean)) {
+    return false;
+  }
+
+  const auditor = agentAssignments[oldClean] || AUDITOR_NAMES[0];
+  const isActive = isAgentActive(oldClean);
+
+  // 1. Update agentAssignments map
+  delete agentAssignments[oldClean];
+  agentAssignments[newClean] = auditor;
+  saveAgentAssignments();
+
+  // 2. Update agentStatus map
+  if (agentStatus[oldClean] !== undefined) {
+    agentStatus[newClean] = agentStatus[oldClean];
+    delete agentStatus[oldClean];
+    saveAgentStatus();
+  }
+
+  // 3. Register oldName as alias of newName for future N-1 uploads
+  addAgentAlias(oldClean, newClean);
+
+  // 4. Update existing samplerIntelligence records in place
+  let intelChanged = false;
+  for (const ticket of Object.values(samplerIntelligence)) {
+    if (ticket.agent === oldClean) {
+      ticket.agent = newClean;
+      intelChanged = true;
+    }
+  }
+  if (intelChanged) saveSamplerIntelligence();
+
+  // 5. Update existing workbookRequirementIntelligence records in place
+  let popChanged = false;
+  for (const rec of Object.values(workbookRequirementIntelligence)) {
+    if (rec.agents && rec.agents[oldClean]) {
+      rec.agents[newClean] = rec.agents[oldClean];
+      rec.agents[newClean].agent = newClean;
+      delete rec.agents[oldClean];
+      popChanged = true;
+    }
+  }
+  if (popChanged) saveWorkbookRequirementIntelligence();
+
+  // 6. Update watchlist snapshots
+  let watchChanged = false;
+  for (const item of watchlistItems) {
+    if (item.snapshot?.agent === oldClean) {
+      item.snapshot.agent = newClean;
+      watchChanged = true;
+    }
+    if (item.assignee === oldClean) {
+      item.assignee = newClean;
+      watchChanged = true;
+    }
+  }
+  if (watchChanged) saveWatchlist();
+
+  // 7. Update active currentPayload in memory
+  if (currentPayload && currentPayload.agents) {
+    for (const group of currentPayload.agents) {
+      if (group.agent === oldClean) {
+        group.agent = newClean;
+        for (const t of group.tickets || []) {
+          t.agent = newClean;
+        }
+      }
+    }
+  }
+
+  // 8. Recompute lookups and refresh views
+  recomputeAgentAuditorMaps();
+  reassignCurrentPayloadAuditors();
+  if (!AUDITORS.some((entry) => entry.name === activeAuditor)) {
+    activeAuditor = AUDITORS[0]?.name || null;
+  }
+
+  logAssignmentHistory({
+    agent: newClean,
+    from: `${oldClean} (${auditor})`,
+    to: `${newClean} (${auditor})`,
+    action: "Renamed",
+  });
+
+  pushAgentsToFirestore([newClean]);
+
+  renderAuditorTabs();
+  render();
+  refreshAssignAgentsPanel();
+  return true;
+}
+
+function openRenameAgentModal(agentName) {
+  closeRenameAgentModal();
+  const modal = document.createElement("div");
+  modal.className = "modal-backdrop";
+  modal.dataset.renameAgentModal = "true";
+  modal.innerHTML = `
+    <section class="metric-modal rename-agent-modal" role="dialog" aria-modal="true" aria-label="Rename Agent">
+      <header>
+        <div>
+          <strong>Rename Agent</strong>
+          <span>Update agent name across all historical records, samples, and intelligence.</span>
+        </div>
+        <button type="button" data-close-rename-agent aria-label="Close">&times;</button>
+      </header>
+      <div class="ops-panel-body">
+        <div class="add-agent-form">
+          <label>
+            Current Name
+            <input type="text" class="ops-input" value="${escapeHtml(agentName)}" disabled />
+          </label>
+          <label>
+            New Agent Name
+            <input type="text" class="ops-input" data-rename-agent-input data-old-agent="${escapeHtml(agentName)}" value="${escapeHtml(agentName)}" autocomplete="off" />
+          </label>
+          <div class="add-agent-error" data-rename-agent-error hidden>An agent with this name already exists.</div>
+          <p class="muted" style="font-size: 12px; margin-top: 6px;">
+            Renaming updates active sampling, historical sampled picks, and workbook requirement intelligence, and maps the old name as an alias for future uploads.
+          </p>
+        </div>
+        <div class="assign-actions">
+          <button type="button" class="reject-btn" data-close-rename-agent>Cancel</button>
+          <button type="button" class="primary-action" data-rename-agent-submit disabled>Rename Agent</button>
+        </div>
+      </div>
+    </section>
+  `;
+  document.body.appendChild(modal);
+  const input = modal.querySelector("[data-rename-agent-input]");
+  input.focus();
+  input.select();
+}
+
+function closeRenameAgentModal() {
+  document.querySelector("[data-rename-agent-modal]")?.remove();
+}
+
+function validateRenameAgentForm() {
+  const modal = document.querySelector("[data-rename-agent-modal]");
+  if (!modal) return;
+  const input = modal.querySelector("[data-rename-agent-input]");
+  const oldName = clean(input.dataset.oldAgent);
+  const newName = clean(input.value);
+  const errorEl = modal.querySelector("[data-rename-agent-error]");
+  const submitBtn = modal.querySelector("[data-rename-agent-submit]");
+
+  const duplicate = newName && normalizeName(newName) !== normalizeName(oldName) ? findExistingAgentName(newName) : null;
+  errorEl.hidden = !duplicate;
+  submitBtn.disabled = !newName || newName === oldName || !!duplicate;
+}
+
+function submitRenameAgentForm() {
+  const modal = document.querySelector("[data-rename-agent-modal]");
+  if (!modal) return;
+  const input = modal.querySelector("[data-rename-agent-input]");
+  const oldName = clean(input.dataset.oldAgent);
+  const newName = clean(input.value);
+
+  if (!oldName || !newName || oldName === newName) {
+    validateRenameAgentForm();
+    return;
+  }
+  const duplicate = findExistingAgentName(newName);
+  if (duplicate && normalizeName(duplicate) !== normalizeName(oldName)) {
+    validateRenameAgentForm();
+    return;
+  }
+
+  const success = renameAgent(oldName, newName);
+  if (success) {
+    closeRenameAgentModal();
+  }
+}
+
 function renderAgentAssignRow(agent) {
   const currentAuditor = agentAssignments[agent];
   const active = isAgentActive(agent);
@@ -966,11 +2274,14 @@ function renderAgentAssignRow(agent) {
         </select>
       </td>
       <td>
-        ${
-          active
-            ? `<button type="button" class="ops-action-inline" data-mark-inactive="${escapeHtml(agent)}">Mark Inactive</button>`
-            : `<button type="button" class="ops-action-inline" data-reactivate="${escapeHtml(agent)}">Reactivate</button>`
-        }
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <button type="button" class="ops-action-inline" data-rename-agent="${escapeHtml(agent)}">Rename</button>
+          ${
+            active
+              ? `<button type="button" class="ops-action-inline" data-mark-inactive="${escapeHtml(agent)}">Mark Inactive</button>`
+              : `<button type="button" class="ops-action-inline" data-reactivate="${escapeHtml(agent)}">Reactivate</button>`
+          }
+        </div>
       </td>
     </tr>
   `;
@@ -987,7 +2298,10 @@ function renderAssignAgentsPanel() {
   return `
     <div class="assign-panel-header">
       <strong>Agents (${allAgents.length})</strong>
-      <button type="button" class="assign-add-btn" data-add-agent-trigger title="Add Agent" aria-label="Add Agent">+</button>
+      <button type="button" class="assign-add-btn" data-add-agent-trigger title="Add New Agent" aria-label="Add New Agent">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        <span>Add Agent</span>
+      </button>
     </div>
     <div class="modal-table-wrap assign-table">
       <table>
@@ -1214,12 +2528,11 @@ const opsToggleBtn = document.querySelector("#opsToggle");
 const opsMenuEl = document.querySelector("#opsMenu");
 const opsBackdropEl = document.querySelector("#opsBackdrop");
 
-let currentPayload = null;
+var currentPayload = null;
 let currentChannel = "All";
-let activeAuditor = AUDITORS[0].name;
+var activeAuditor = localStorage.getItem("preferredAuditor") || "All";
 let expandedAgent = null;
 let copiedTickets = new Set(JSON.parse(localStorage.getItem("copiedTickets") || "[]"));
-let ticketHistory = loadTicketHistory();
 let watchlistItems = loadWatchlist();
 let rejectedTickets = new Set(JSON.parse(localStorage.getItem("rejectedTicketsV1") || "[]"));
 let rejectedPatternCounts = JSON.parse(localStorage.getItem("rejectedPatternCountsV1") || "{}");
@@ -1233,6 +2546,7 @@ fileInput.addEventListener("change", async () => {
 });
 
 opsToggleBtn?.addEventListener("click", () => {
+  triggerHapticPulse();
   setOpsMenuOpen(!opsMenuOpen);
 });
 
@@ -1320,36 +2634,37 @@ async function analyzeSelectedFile(file) {
     }
 
     // One official worksheet per Sampling Date - ask before overwriting.
-    if (worksheetLibrary[samplingDateKey]) {
+    if (samplerDailyManifests[samplingDateKey]) {
       const decision = await openWorksheetConflictModal(samplingDateKey);
       if (decision !== "replace") {
-        statusEl.textContent = "Upload cancelled - kept the existing official worksheet.";
+        statusEl.textContent = "Upload cancelled - kept the existing official worksheet record.";
         renderTodayCard();
         return;
       }
     }
 
     const uploaderName = promptForUploaderName();
-    const record = {
+    const manifest = {
       samplingDate: samplingDateKey,
       uploadDate: uploadDateKey,
       uploadedAt: new Date().toISOString(),
       uploader: uploaderName,
       workbookName: file.name,
-      ticketCount: meta.ticketCount,
+      totalWorkbookRows: meta.ticketCount,
       eligibleTicketCount: countEligibleTickets(payload),
+      sampledTicketCount: 0,
       fingerprint: meta.fingerprint,
       qaWeek: computeQaWeekNumber(samplingDateKey),
       qaMonth: computeQaMonthKey(samplingDateKey),
-      auditorAssignmentSnapshot: { ...agentAssignments },
-      activeStatusSnapshot: { ...agentStatus },
-      payload,
     };
-    worksheetLibrary[samplingDateKey] = record;
-    saveWorksheetLibrary();
-    savePayloadToHistory(payload, file.name);
+    recordDailyManifest(manifest);
+
+    const reqIntel = aggregateWorkbookRequirementIntelligence(payload, samplingDateKey);
+    recordWorkbookRequirementIntelligence(reqIntel);
+
     viewingHistorical = null;
-    activatePayload(payload, `Done. ${formatWeekdayLabel(samplingDateKey)} Sample saved as the official worksheet.`);
+    activatePayload(payload, `Done. ${formatWeekdayLabel(samplingDateKey)} Sample loaded for active sampling.`);
+    syncDailySessionToServer(payload, manifest, reqIntel);
     renderTodayCard();
     renderHistoricalBanner();
   } catch (error) {
@@ -1389,7 +2704,12 @@ document.querySelectorAll("[data-channel]").forEach((button) => {
 });
 
 function renderAuditorTabs() {
-  auditorTabsEl.innerHTML = AUDITORS.map(
+  const allTab = `
+    <button class="${activeAuditor === "All" ? "active" : ""}" type="button" data-auditor="All">
+      All Agents
+    </button>
+  `;
+  auditorTabsEl.innerHTML = allTab + AUDITORS.map(
     (auditor) => `
       <button class="${auditor.name === activeAuditor ? "active" : ""}" type="button" data-auditor="${escapeHtml(auditor.name)}">
         ${escapeHtml(auditor.name)}
@@ -1402,21 +2722,27 @@ auditorTabsEl.addEventListener("click", (event) => {
   const button = event.target.closest("[data-auditor]");
   if (!button) return;
   activeAuditor = button.dataset.auditor;
+  safeStorageSetItem("preferredAuditor", activeAuditor);
   renderAuditorTabs();
   render();
 });
 
 copyIdealBtn.addEventListener("click", async () => {
   if (!currentPayload) return;
-  const rows = getActiveAgents()
+  const picks = getActiveAgents()
     .map((agent) => getDisplayTickets(agent).picks[0])
-    .filter(Boolean)
-    .map(copyRow);
+    .filter(Boolean);
 
-  if (!rows.length) return;
+  if (!picks.length) return;
+  const rows = picks.map(copyRow);
   await copyText(rows.join("\n"));
-  rows.forEach((row) => copiedTickets.add(row.split("\t")[3]));
+  picks.forEach((pick) => {
+    const k = getSampleKey(pick.channel, pick.ticketId);
+    copiedTickets.add(k);
+    copiedTickets.add(String(pick.ticketId));
+  });
   persistCopiedTickets();
+  recordSampledTickets(picks);
   copyIdealBtn.textContent = "Copied Ideals";
   setTimeout(() => {
     copyIdealBtn.textContent = "Copy All Ideal Picks";
@@ -1425,14 +2751,19 @@ copyIdealBtn.addEventListener("click", async () => {
 });
 
 document.addEventListener("click", async (event) => {
+  const switchDateBtn = event.target.closest("[data-switch-session-date]");
+  if (switchDateBtn) {
+    const targetDate = switchDateBtn.dataset.switchSessionDate;
+    if (targetDate && targetDate !== activeSessionDate) {
+      triggerHapticPulse();
+      switchActiveDailySession(targetDate);
+    }
+    return;
+  }
+
   const openToday = event.target.closest("[data-open-today]");
   if (openToday) {
-    const record = getOfficialWorksheetFor(computeDefaultSamplingDate(todayDateKey()));
-    if (record) {
-      viewingHistorical = null;
-      activatePayload(record.payload, "Showing today's official sample.");
-      renderHistoricalBanner();
-    }
+    openWorksheetLibraryModal();
     return;
   }
 
@@ -1451,6 +2782,76 @@ document.addEventListener("click", async (event) => {
   const exitHistorical = event.target.closest("[data-exit-historical]");
   if (exitHistorical) {
     exitHistoricalView();
+    return;
+  }
+
+
+  const triggerResetWb = event.target.closest("[data-trigger-reset-workbook]");
+  if (triggerResetWb) {
+    openResetWorkbookConfirmModal();
+    return;
+  }
+
+  const confirmResetWb = event.target.closest("[data-confirm-reset-workbook]");
+  if (confirmResetWb) {
+    executeResetCurrentWorkbook();
+    return;
+  }
+
+  const triggerFlushN1 = event.target.closest("[data-trigger-flush-n1]");
+  if (triggerFlushN1) {
+    openFlushN1ConfirmModal();
+    return;
+  }
+
+  const confirmFlushN1 = event.target.closest("[data-confirm-flush-n1]");
+  if (confirmFlushN1) {
+    executeFlushLocalN1Data();
+    return;
+  }
+
+  const aiPeriodBtn = event.target.closest("[data-ai-period-action]");
+  if (aiPeriodBtn) {
+    handleAiPeriodStep(aiPeriodBtn.dataset.aiPeriodAction);
+    refreshAnalyticsHubPanel();
+    return;
+  }
+
+  const agentReqPopoverBtn = event.target.closest("[data-agent-req-popover]");
+  if (agentReqPopoverBtn) {
+    openAgentReqPopover(agentReqPopoverBtn.dataset.agentReqPopover, agentReqPopoverBtn.dataset.missName);
+    return;
+  }
+
+  const openHighImpactBtn = event.target.closest("[data-open-high-impact]");
+  if (openHighImpactBtn && !openHighImpactBtn.disabled) {
+    openHighImpactModal(openHighImpactBtn.dataset.openHighImpact);
+    return;
+  }
+
+  const closePopoverBtn = event.target.closest("[data-close-popover], [data-close-popover-backdrop]");
+  if (closePopoverBtn) {
+    activeTicketPopover = null;
+    refreshAnalyticsHubPanel();
+    return;
+  }
+
+  const deleteWorksheetBtn = event.target.closest("[data-delete-worksheet]");
+  if (deleteWorksheetBtn) {
+    event.stopPropagation();
+    openDeleteWorksheetConfirmModal(deleteWorksheetBtn.dataset.deleteWorksheet);
+    return;
+  }
+
+  const confirmDeleteWbBtn = event.target.closest("[data-confirm-delete-worksheet]");
+  if (confirmDeleteWbBtn) {
+    executeDeleteWorksheet(confirmDeleteWbBtn.dataset.confirmDeleteWorksheet);
+    return;
+  }
+
+  const cancelDeleteWbBtn = event.target.closest("[data-cancel-delete-worksheet]");
+  if (cancelDeleteWbBtn) {
+    openWorksheetLibraryModal();
     return;
   }
 
@@ -1565,6 +2966,24 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  const renameAgentTrigger = event.target.closest("[data-rename-agent]");
+  if (renameAgentTrigger) {
+    openRenameAgentModal(renameAgentTrigger.dataset.renameAgent);
+    return;
+  }
+
+  const closeRenameAgent = event.target.closest("[data-close-rename-agent]");
+  if (closeRenameAgent) {
+    closeRenameAgentModal();
+    return;
+  }
+
+  const renameAgentSubmit = event.target.closest("[data-rename-agent-submit]");
+  if (renameAgentSubmit && !renameAgentSubmit.disabled) {
+    submitRenameAgentForm();
+    return;
+  }
+
   const markInactive = event.target.closest("[data-mark-inactive]");
   if (markInactive) {
     const agent = markInactive.dataset.markInactive;
@@ -1599,6 +3018,7 @@ document.addEventListener("click", async (event) => {
   if (closeModal) {
     closeMetricModal();
     closeTagsModal();
+    document.querySelector("[data-historical-modal]")?.remove();
     return;
   }
 
@@ -1610,16 +3030,108 @@ document.addEventListener("click", async (event) => {
 
   const rejectButton = event.target.closest(".reject-btn");
   if (rejectButton) {
-    toggleRejectedTicket(rejectButton.dataset.ticketId);
+    const ticketId = rejectButton.dataset.ticketId;
+    const channel = rejectButton.dataset.channel || "";
+    toggleRejectedTicket(ticketId);
+    if (rejectedTickets.has(ticketId)) {
+      removeSampledTicket(channel, ticketId);
+      if (channel) copiedTickets.delete(getSampleKey(channel, ticketId));
+      copiedTickets.delete(ticketId);
+      persistCopiedTickets();
+    }
     render();
+    return;
+  }
+
+  const storageActionBtn = event.target.closest("[data-storage-action]");
+  if (storageActionBtn) {
+    const action = storageActionBtn.dataset.storageAction;
+    if (action === "run-compaction") {
+      checkAndTriggerProactiveCompaction(true);
+      if (typeof statusEl !== "undefined" && statusEl) {
+        statusEl.textContent = "Proactive storage compaction completed. Historical records compressed.";
+      }
+      refreshWorksheetLibraryModal();
+    }
+    return;
+  }
+
+  const perfPeriodBtn = event.target.closest("[data-perf-period]");
+  if (perfPeriodBtn) {
+    activePerformancePeriod = perfPeriodBtn.dataset.perfPeriod;
+    refreshAnalyticsHubPanel();
+    return;
+  }
+
+  const analyticsTabBtn = event.target.closest("[data-analytics-tab]");
+  if (analyticsTabBtn) {
+    const tab = analyticsTabBtn.dataset.analyticsTab;
+    if (tab === "weekly" || tab === "monthly" || tab === "quarterly") {
+      activeAnalyticsTab = "performance";
+      activePerformancePeriod = tab === "weekly" ? "week" : tab === "monthly" ? "month" : "quarter";
+    } else {
+      activeAnalyticsTab = tab;
+    }
+    refreshAnalyticsHubPanel();
+    return;
+  }
+
+  const periodActionBtn = event.target.closest("[data-period-action]");
+  if (periodActionBtn) {
+    const action = periodActionBtn.dataset.periodAction;
+    if (action === "prev-week") {
+      if (activeAnalyticsWeek > 1) activeAnalyticsWeek--;
+      else { activeAnalyticsWeek = 52; activeAnalyticsYear--; }
+    } else if (action === "next-week") {
+      if (activeAnalyticsWeek < 52) activeAnalyticsWeek++;
+      else { activeAnalyticsWeek = 1; activeAnalyticsYear++; }
+    } else if (action === "prev-month") {
+      activeAnalyticsMonth = shiftMonthKey(activeAnalyticsMonth, -1);
+    } else if (action === "next-month") {
+      activeAnalyticsMonth = shiftMonthKey(activeAnalyticsMonth, 1);
+    } else if (action === "prev-quarter") {
+      activeAnalyticsQuarter = getPriorQuarterKey(activeAnalyticsQuarter);
+    } else if (action === "next-quarter") {
+      const [y, q] = activeAnalyticsQuarter.split("-");
+      const numY = Number(y);
+      if (q === "Q1") activeAnalyticsQuarter = `${numY}-Q2`;
+      else if (q === "Q2") activeAnalyticsQuarter = `${numY}-Q3`;
+      else if (q === "Q3") activeAnalyticsQuarter = `${numY}-Q4`;
+      else activeAnalyticsQuarter = `${numY + 1}-Q1`;
+    }
+    refreshAnalyticsHubPanel();
+    return;
+  }
+
+  const toggleMissBtn = event.target.closest("[data-toggle-systemic-miss]");
+  if (toggleMissBtn) {
+    const missName = toggleMissBtn.dataset.toggleSystemicMiss;
+    expandedSystemicMiss = expandedSystemicMiss === missName ? null : missName;
+    refreshAnalyticsHubPanel();
+    return;
+  }
+
+  const toggleAgentBtn = event.target.closest("[data-toggle-agent-tickets]");
+  if (toggleAgentBtn) {
+    const agentName = toggleAgentBtn.dataset.toggleAgentTickets;
+    expandedAgentDrilldown = expandedAgentDrilldown === agentName ? null : agentName;
+    refreshAnalyticsHubPanel();
     return;
   }
 
   const button = event.target.closest(".copy-btn");
   if (!button) return;
   await copyText(button.dataset.copy);
-  copiedTickets.add(button.dataset.ticketId);
+  const ticketId = button.dataset.ticketId;
+  const channel = button.dataset.channel || "";
+  const pick = findTicketById(ticketId, channel);
+  const compKey = getSampleKey(pick?.channel || channel, ticketId);
+  copiedTickets.add(compKey);
+  copiedTickets.add(ticketId);
   persistCopiedTickets();
+  if (pick) {
+    recordSampledTicket(pick);
+  }
   button.textContent = "Copied";
   setTimeout(() => {
     button.textContent = "Copy";
@@ -1630,6 +3142,12 @@ document.addEventListener("click", async (event) => {
 // Delegated so re-rendering the assign panel (mark inactive/reactivate,
 // save, reset) never needs to re-attach these.
 document.addEventListener("input", (event) => {
+  if (event.target.id === "intelSearchInput") {
+    intelSearchQuery = event.target.value;
+    refreshAnalyticsHubPanel();
+    return;
+  }
+
   const historySearch = event.target.closest("[data-history-search]");
   if (historySearch) {
     assignHistorySearch = historySearch.value;
@@ -1640,25 +3158,95 @@ document.addEventListener("input", (event) => {
   const addAgentName = event.target.closest("[data-add-agent-name]");
   if (addAgentName) {
     validateAddAgentForm();
+    return;
+  }
+
+  const renameAgentInput = event.target.closest("[data-rename-agent-input]");
+  if (renameAgentInput) {
+    validateRenameAgentForm();
+    return;
   }
 });
 
 document.addEventListener("keydown", (event) => {
   const addAgentModal = document.querySelector("[data-add-agent-modal]");
-  if (!addAgentModal) return;
-  if (event.key === "Escape") {
-    event.preventDefault();
-    closeAddAgentModal();
-    return;
+  if (addAgentModal) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeAddAgentModal();
+      return;
+    }
+    if (event.key === "Enter" && event.target.closest("[data-add-agent-name]")) {
+      event.preventDefault();
+      const submitBtn = addAgentModal.querySelector("[data-add-agent-submit]");
+      if (submitBtn && !submitBtn.disabled) submitAddAgentForm();
+      return;
+    }
   }
-  if (event.key === "Enter" && event.target.closest("[data-add-agent-name]")) {
-    event.preventDefault();
-    const submitBtn = addAgentModal.querySelector("[data-add-agent-submit]");
-    if (submitBtn && !submitBtn.disabled) submitAddAgentForm();
+
+  const renameAgentModal = document.querySelector("[data-rename-agent-modal]");
+  if (renameAgentModal) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeRenameAgentModal();
+      return;
+    }
+    if (event.key === "Enter" && event.target.closest("[data-rename-agent-input]")) {
+      event.preventDefault();
+      const submitBtn = renameAgentModal.querySelector("[data-rename-agent-submit]");
+      if (submitBtn && !submitBtn.disabled) submitRenameAgentForm();
+      return;
+    }
   }
 });
 
 document.addEventListener("change", (event) => {
+  if (event.target.id === "analyticsWeekSelect") {
+    activeAnalyticsWeek = Number(event.target.value);
+    refreshAnalyticsHubPanel();
+    return;
+  }
+  if (event.target.id === "analyticsYearSelect") {
+    activeAnalyticsYear = Number(event.target.value);
+    refreshAnalyticsHubPanel();
+    return;
+  }
+  if (event.target.id === "analyticsMonthSelect") {
+    activeAnalyticsMonth = event.target.value;
+    refreshAnalyticsHubPanel();
+    return;
+  }
+  if (event.target.id === "analyticsQuarterSelect") {
+    activeAnalyticsQuarter = event.target.value;
+    refreshAnalyticsHubPanel();
+    return;
+  }
+  if (event.target.id === "intelPeriodSelect") {
+    intelPeriodFilter = event.target.value;
+    refreshAnalyticsHubPanel();
+    return;
+  }
+  if (event.target.id === "intelAuditorSelect") {
+    intelAuditorFilter = event.target.value;
+    refreshAnalyticsHubPanel();
+    return;
+  }
+  if (event.target.id === "intelAgentSelect") {
+    intelAgentFilter = event.target.value;
+    refreshAnalyticsHubPanel();
+    return;
+  }
+  if (event.target.id === "intelChannelSelect") {
+    intelChannelFilter = event.target.value;
+    refreshAnalyticsHubPanel();
+    return;
+  }
+  if (event.target.id === "intelCleanSelect") {
+    intelCleanFilter = event.target.value;
+    refreshAnalyticsHubPanel();
+    return;
+  }
+
   const auditorFilter = event.target.closest("[data-history-auditor-filter]");
   if (auditorFilter) {
     assignHistoryAuditorFilter = auditorFilter.value;
@@ -1792,11 +3380,11 @@ async function analyzeWorkbook(buffer) {
       subject: getSubjectValue(row),
       module: clean(pick(row, "Module")),
       feature: clean(pick(row, "Feature")),
-      chatDuration: clean(pick(row, "Chat duration brackets")),
+      chatDuration: clean(pick(row, "Chat duration brackets", "Messaging duration brackets", "Duration brackets")),
       callDuration: clean(pick(row, "Call duration (min)")),
       callTalkTime: clean(pick(row, "Call talk time (min)")),
       callDirection: clean(pick(row, "Call direction")),
-      satisfaction: clean(pick(row, "Ticket satisfaction rating", "Chat satisfaction rating")),
+      satisfaction: clean(pick(row, "Ticket satisfaction rating", "Chat satisfaction rating", "Messaging satisfaction rating")),
       solvedHour: clean(pick(row, "Ticket solved - Hour")),
       resolutionTimeHours: clean(pick(row, "resolution_time_hours")),
       keepOnHold: clean(pick(row, "Keep on hold")),
@@ -1998,9 +3586,9 @@ function isBlank(value) {
 
 function sheetChannel(sheetName) {
   const lowered = sheetName.toLowerCase();
-  if (lowered.includes("chat")) return "Chat";
   if (lowered.includes("voice") || lowered.includes("call")) return "Voice";
   if (lowered.includes("email")) return "Email";
+  if (lowered.includes("chat") || lowered.includes("messag")) return "Chat";
   return sheetName;
 }
 
@@ -2122,7 +3710,7 @@ function getSubjectIssueDetails(subjectValue, channel) {
     };
   }
 
-  const isChatDefault = lower.startsWith("conversation with");
+  const isChatDefault = lower.startsWith("conversation with") || lower.startsWith("chat with");
   const isVoiceGenerated =
     /^(call with|missed call from|abandoned call from)(\b|:)/i.test(subject) ||
     /^call with caller\b/i.test(subject);
@@ -2230,7 +3818,7 @@ function scoreTicket(row, channel) {
   }
 
   if (channel === "Chat") {
-    const duration = clean(pick(row, "Chat duration brackets"));
+    const duration = clean(pick(row, "Chat duration brackets", "Messaging duration brackets", "Duration brackets"));
     const hasLongChat = duration.includes(">12") || duration.includes("12+");
     checks.push(statusTag("Chat >12 min", hasLongChat));
     if (hasLongChat) {
@@ -2303,7 +3891,7 @@ function scoreTicket(row, channel) {
     tags.push("Missing Org");
   } else lacks.push("organization is present");
 
-  const unsatisfied = isUnsatisfied(pick(row, "Ticket satisfaction rating", "Chat satisfaction rating"));
+  const unsatisfied = isUnsatisfied(pick(row, "Ticket satisfaction rating", "Chat satisfaction rating", "Messaging satisfaction rating"));
   checks.push(statusTag("Unsatisfied", unsatisfied));
   if (unsatisfied) {
     score += 28;
@@ -2357,10 +3945,10 @@ function updateMetrics(metrics, row, channel) {
   if (isBlank(pick(row, "Module"))) metrics.blankModule += 1;
   if (isBlank(pick(row, "Feature"))) metrics.blankFeature += 1;
   if (isBlank(pick(row, "Ticket organization", "Ticket organization name"))) metrics.blankOrganization += 1;
-  if (isUnsatisfied(pick(row, "Ticket satisfaction rating", "Chat satisfaction rating"))) metrics.unsatisfied += 1;
+  if (isUnsatisfied(pick(row, "Ticket satisfaction rating", "Chat satisfaction rating", "Messaging satisfaction rating"))) metrics.unsatisfied += 1;
   if (getSubjectIssueDetails(getSubjectValue(row), channel).hasHeaderIssue) metrics.headerIssues += 1;
   if (channel === "Email" && isBlank(pick(row, "resolution_time_hours")) && isBlank(pick(row, "Keep on hold"))) metrics.emailUnresolvedNoHold += 1;
-  if (channel === "Chat" && (clean(pick(row, "Chat duration brackets")).includes(">12") || clean(pick(row, "Chat duration brackets")).includes("12+"))) {
+  if (channel === "Chat" && (clean(pick(row, "Chat duration brackets", "Messaging duration brackets", "Duration brackets")).includes(">12") || clean(pick(row, "Chat duration brackets", "Messaging duration brackets", "Duration brackets")).includes("12+"))) {
     metrics.longChats += 1;
   }
   if (channel === "Voice") {
@@ -2397,6 +3985,7 @@ function getLearningPenalty(ticketLike) {
 }
 
 function toggleRejectedTicket(ticketId) {
+  triggerHapticPulse();
   const id = clean(ticketId);
   if (!id) return;
   const ticket = findTicketById(id);
@@ -2424,50 +4013,8 @@ function findTicketById(ticketId) {
 }
 
 function persistRejectedLearning() {
-  localStorage.setItem("rejectedTicketsV1", JSON.stringify([...rejectedTickets]));
-  localStorage.setItem("rejectedPatternCountsV1", JSON.stringify(rejectedPatternCounts));
-}
-
-function loadTicketHistory() {
-  try {
-    return JSON.parse(localStorage.getItem("n1TicketHistoryV1") || "{}");
-  } catch {
-    return {};
-  }
-}
-
-function saveTicketHistory() {
-  localStorage.setItem("n1TicketHistoryV1", JSON.stringify(ticketHistory));
-}
-
-function savePayloadToHistory(payload, fileName) {
-  const uploadedAt = new Date().toISOString();
-  for (const agent of payload.agents) {
-    for (const ticket of agent.tickets) {
-      if (!ticket.ticketId) continue;
-      ticketHistory[ticket.ticketId] = {
-        ticketId: ticket.ticketId,
-        date: ticket.date,
-        monthKey: getMonthKey(ticket.date),
-        agent: ticket.agent,
-        auditor: ticket.auditor,
-        channel: ticket.channel,
-        score: ticket.score,
-        tags: ticket.tags,
-        checks: ticket.checks,
-        subject: ticket.subject,
-        module: ticket.module,
-        feature: ticket.feature,
-        organization: ticket.organization,
-        satisfaction: ticket.satisfaction,
-        solvedHour: ticket.solvedHour,
-        keepOnHold: ticket.keepOnHold,
-        sourceFile: fileName,
-        uploadedAt,
-      };
-    }
-  }
-  saveTicketHistory();
+  safeStorageSetItem("rejectedTicketsV1", JSON.stringify([...rejectedTickets]));
+  safeStorageSetItem("rejectedPatternCountsV1", JSON.stringify(rejectedPatternCounts));
 }
 
 function loadWatchlist() {
@@ -2480,11 +4027,19 @@ function loadWatchlist() {
 }
 
 function saveWatchlist() {
-  localStorage.setItem("ticketWatchlistV1", JSON.stringify(watchlistItems));
+  safeStorageSetItem("ticketWatchlistV1", JSON.stringify(watchlistItems));
 }
 
 function handleOpsAction(action) {
   setOpsMenuOpen(false);
+  if (action === "analytics") {
+    openAnalyticsHubModal();
+    return;
+  }
+  if (action === "intelligence") {
+    openHistoricalIntelligenceModal();
+    return;
+  }
   if (action === "audit") {
     AUDIT_SHEETS.forEach((url) => window.open(url, "_blank", "noopener,noreferrer"));
     return;
@@ -2510,14 +4065,14 @@ function handleOpsAction(action) {
   }
 }
 
-function openOpsModal(title, subtitle, bodyHtml) {
+function openOpsModal(title, subtitle, bodyHtml, customClass = "") {
   closeOpsModal();
   closeMetricModal();
   const modal = document.createElement("div");
   modal.className = "modal-backdrop";
   modal.dataset.opsModal = "true";
   modal.innerHTML = `
-    <section class="metric-modal ops-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+    <section class="metric-modal ops-modal ${escapeHtml(customClass)}" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
       <header>
         <div>
           <strong>${escapeHtml(title)}</strong>
@@ -2535,87 +4090,339 @@ function closeOpsModal() {
   document.querySelector("[data-ops-modal]")?.remove();
 }
 
-function openTicketSearchModal() {
-  openOpsModal(
-    "Search Ticket",
-    "Find old sample notes, stored misses, watchlist feedback, and Zendesk link.",
-    `
-      <div class="ops-search-row">
-        <input id="ticketSearchInput" class="ops-input" type="text" placeholder="Paste ticket ID or Zendesk ticket link" />
-        <button class="primary-action" type="button" data-ticket-search-run>Search</button>
+
+// ==========================================================================
+// AI SEARCH AGENT & INTELLIGENT SEARCH ENGINE
+// ==========================================================================
+
+function executeAiSearchQuery(query) {
+  const rawQ = clean(query);
+  if (!rawQ) return null;
+  const q = rawQ.toLowerCase();
+  const directId = extractTicketId(rawQ);
+  const allKnownAgents = new Set([
+    ...Object.keys(agentAssignments || {}),
+    ...TARGET_AGENTS,
+    ...(currentPayload?.agents || []).map((a) => a.name || a.agent),
+    ...Object.values(samplerIntelligence).map((t) => t.agent),
+  ].filter(Boolean));
+  const knownAgents = [...allKnownAgents];
+  const matchedAgents = knownAgents.filter((a) => {
+    const lowA = a.toLowerCase();
+    if (q.includes(lowA) || q.includes(normalizeName(a))) return true;
+    const parts = lowA.split(/\s+/).filter((p) => p.length >= 3);
+    return parts.some((p) => q.includes(p));
+  });
+  const matchedChannels = ["chat", "voice", "email"].filter((c) => q.includes(c) || (c === "voice" && q.includes("call")) || (c === "chat" && q.includes("messag")));
+  
+  const knownMisses = [
+    "Header Issue", "Blank Module", "Blank Feature", "Email No Hold", "Missing Jira",
+    "Missing Subject", "Blank Organization", "Bad CSAT", "No Organisation", "Merged Tickets"
+  ];
+  const matchedMisses = knownMisses.filter((m) => q.includes(m.toLowerCase()) || q.includes(m.replace(/\s+/g, "").toLowerCase()));
+
+  const wantsClean = q.includes("clean") || q.includes("pass") || q.includes("100%");
+  const wantsMiss = q.includes("miss") || q.includes("fail") || q.includes("issue") || q.includes("defect") || q.includes("error");
+  const wantsHighImpact = q.includes("high impact") || q.includes("high-impact") || q.includes("major");
+  const wantsMerged = q.includes("merge");
+
+  const allCandidateTickets = [];
+  const seenIds = new Set();
+
+  const addCandidate = (ticket, source) => {
+    const tid = String(ticket.ticketId || ticket.id || "");
+    const compKey = `${ticket.channel || "Chat"}::${tid}`;
+    if (!tid || seenIds.has(compKey)) return;
+    seenIds.add(compKey);
+    allCandidateTickets.push({ ...ticket, _source: source, _compKey: compKey });
+  };
+
+  (currentPayload?.agents || []).flatMap((a) => a.tickets).forEach((t) => addCandidate(t, "Live Workbook"));
+  Object.values(samplerIntelligence).forEach((t) => addCandidate(t, "Historical Sample"));
+
+  const scoredResults = allCandidateTickets.map((ticket) => {
+    let score = 0;
+    const reasons = [];
+    const tid = String(ticket.ticketId || ticket.id || "");
+    const agent = ticket.agent || "";
+    const channel = ticket.channel || "";
+    const subject = ticket.subject || "";
+    const module = ticket.module || "";
+    const feature = ticket.feature || "";
+    const misses = getTicketMisses(ticket);
+    const tags = ticket.tags || [];
+
+    if (directId && tid.includes(directId)) {
+      score += (tid === directId ? 120 : 60);
+      reasons.push(`Ticket #${tid}`);
+    }
+
+    if (matchedAgents.length) {
+      if (matchedAgents.some((a) => agent.toLowerCase().includes(a.toLowerCase()))) {
+        score += 45;
+        reasons.push(`Agent: ${agent}`);
+      }
+    } else if (q.length > 2 && agent.toLowerCase().includes(q)) {
+      score += 35;
+      reasons.push(`Agent match: ${agent}`);
+    }
+
+    if (matchedChannels.length) {
+      if (matchedChannels.some((c) => channel.toLowerCase().includes(c) || (c === "voice" && channel.toLowerCase().includes("call")))) {
+        score += 20;
+        reasons.push(`Channel: ${channel}`);
+      }
+    }
+
+    if (matchedMisses.length) {
+      const hitMiss = matchedMisses.find((m) => misses.some((miss) => miss.toLowerCase().includes(m.toLowerCase())) || tags.some((t) => t.toLowerCase().includes(m.toLowerCase())));
+      if (hitMiss) {
+        score += 45;
+        reasons.push(`Miss: ${hitMiss}`);
+      }
+    }
+
+    if (wantsClean && misses.length === 0 && !ticket.isMergedChild) {
+      score += 30;
+      reasons.push("Clean Candidate");
+    }
+    if (wantsMiss && misses.length > 0) {
+      score += 25;
+      reasons.push(`${misses.length} Misses`);
+    }
+    if (wantsHighImpact && (misses.length > 2 || misses.some((m) => ["Header Issue", "Blank Module", "Blank Feature", "Email No Hold", "Missing Jira"].includes(m)))) {
+      score += 35;
+      reasons.push("High-Impact");
+    }
+    if (wantsMerged && ticket.isMergedChild) {
+      score += 30;
+      reasons.push("Merged Ticket");
+    }
+
+    const fullText = `${subject} ${module} ${feature} ${tags.join(" ")}`.toLowerCase();
+    const queryWords = q.split(/\s+/).filter((w) => w.length > 2);
+    let wordHits = 0;
+    queryWords.forEach((w) => {
+      if (fullText.includes(w)) {
+        wordHits++;
+        score += 15;
+      }
+    });
+    if (wordHits > 0) {
+      reasons.push(`Keyword match (${wordHits} terms)`);
+    }
+
+    return { ticket, score, reasons, misses };
+  });
+
+  const matchingTickets = scoredResults
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((r) => ({ ...r.ticket, _reasons: r.reasons, _score: r.score, _misses: r.misses }));
+
+  const total = matchingTickets.length;
+  const cleanCount = matchingTickets.filter((t) => t._misses.length === 0 && !t.isMergedChild).length;
+  const missCount = total - cleanCount;
+  const complianceRate = total ? Math.round((cleanCount / total) * 100) : 0;
+  const highImpactCount = matchingTickets.filter((t) => t._misses.length > 2 || t._misses.some((m) => ["Header Issue", "Blank Module", "Blank Feature", "Email No Hold", "Missing Jira"].includes(m))).length;
+
+  let aiBrief = "";
+  if (total === 0) {
+    aiBrief = `No matching tickets found for query "${rawQ}". Try searching by numerical Ticket ID, Agent Name (e.g. Alice), Support Channel (e.g. Voice), or Miss Category (e.g. Header Issue).`;
+  } else if (matchedAgents.length && matchedMisses.length) {
+    aiBrief = `AI Analysis: Located ${total} ticket${total === 1 ? "" : "s"} for ${matchedAgents.join(", ")} associated with ${matchedMisses.join(", ")}. Compliance: ${complianceRate}%. ${highImpactCount} ticket${highImpactCount === 1 ? "" : "s"} qualify as High-Impact requiring coaching review.`;
+  } else if (matchedAgents.length) {
+    aiBrief = `AI Analysis: Located ${total} ticket${total === 1 ? "" : "s"} for ${matchedAgents.join(", ")} with ${complianceRate}% compliance rate (${cleanCount} clean, ${missCount} with requirement misses).`;
+  } else if (matchedMisses.length) {
+    aiBrief = `AI Analysis: Detected ${total} ticket${total === 1 ? "" : "s"} exhibiting ${matchedMisses.join(", ")}. Coaching Directive: Verify standard subject formatting and mandatory SOP module classification.`;
+  } else if (directId) {
+    aiBrief = `AI Analysis: Located ticket #${directId} with complete verified requirement checks and 1-click Zendesk connection.`;
+  } else {
+    aiBrief = `AI Analysis: Found ${total} ticket${total === 1 ? "" : "s"} matching "${rawQ}". Team compliance rate across these results is ${complianceRate}% (${cleanCount} clean, ${missCount} flagged).`;
+  }
+
+  const watchMatches = findWatchlistMatches(rawQ);
+
+  return {
+    query: rawQ,
+    detected: {
+      agents: matchedAgents,
+      channels: matchedChannels,
+      misses: matchedMisses,
+      intents: [wantsClean && "Clean", wantsMiss && "Misses", wantsHighImpact && "High-Impact", wantsMerged && "Merged"].filter(Boolean),
+    },
+    total,
+    cleanCount,
+    missCount,
+    complianceRate,
+    highImpactCount,
+    aiBrief,
+    tickets: matchingTickets,
+    watchlist: watchMatches,
+  };
+}
+
+function renderAiSearchTicketCards(tickets) {
+  if (!tickets.length) {
+    return `
+      <div class="ios-empty-state">
+        <span class="ios-empty-icon">&#128269;</span>
+        <strong>No Results Found</strong>
+        <span>Try adjusting your query terms or searching by Ticket ID.</span>
       </div>
-      <div id="ticketSearchResults" class="ops-results empty">Enter a ticket ID to search your local sampling memory.</div>
-    `,
-  );
-  document.querySelector("#ticketSearchInput")?.focus();
+    `;
+  }
+
+  return tickets.map((ticket) => {
+    const tid = ticket.ticketId || ticket.id;
+    const channelLower = (ticket.channel || "chat").toLowerCase();
+    const isHighImpact = ticket._misses && (ticket._misses.length > 2 || ticket._misses.some((m) => ["Header Issue", "Blank Module", "Blank Feature", "Email No Hold", "Missing Jira"].includes(m)));
+
+    return `
+      <article class="ai-search-ticket-card">
+        <div class="ai-ticket-card-header">
+          <div class="ai-ticket-header-left">
+            <div class="ios-ticket-id-wrap">
+              ${renderTicketLink(tid)}
+            </div>
+            <div class="ai-ticket-agent-wrap">
+              <strong class="ai-ticket-agent-name">${escapeHtml(ticket.agent || "Unknown Agent")}</strong>
+              <span class="ai-ticket-date">${escapeHtml(ticket.date || "-")} &middot; ${escapeHtml(ticket._source || "Workbook")}</span>
+            </div>
+          </div>
+          <div class="ai-ticket-header-right">
+            <span class="ios-channel-badge ${channelLower}">${escapeHtml(ticket.channel || "Chat")}</span>
+            ${ticket.score !== undefined ? `<span class="ios-score-badge">Score ${ticket.score}</span>` : ""}
+            ${isHighImpact ? `<span class="ai-high-impact-pill">High-Impact</span>` : ""}
+          </div>
+        </div>
+
+        <div class="ai-ticket-subject-row">
+          <strong>Subject:</strong> <span>${escapeHtml(ticket.subject || "No subject recorded")}</span>
+        </div>
+
+        ${(ticket.module || ticket.feature || ticket.organization) ? `
+          <div class="ai-ticket-module-row">
+            ${ticket.module ? `<span>Module: <b>${escapeHtml(ticket.module)}</b></span>` : ""}
+            ${ticket.feature ? `<span>Feature: <b>${escapeHtml(ticket.feature)}</b></span>` : ""}
+            ${ticket.organization ? `<span>Org: <b>${escapeHtml(ticket.organization)}</b></span>` : ""}
+          </div>
+        ` : ""}
+
+        <div class="ai-ticket-req-row">
+          <span class="ai-req-label">Requirement Checks:</span>
+          <div class="ai-req-pills">
+            ${ticket._misses && ticket._misses.length ? ticket._misses.map((m) => `<span class="check-pill fail">&#10007; ${escapeHtml(m)}</span>`).join("") : `<span class="check-pill pass">&#10003; Clean (0 misses)</span>`}
+          </div>
+        </div>
+
+        ${ticket._reasons && ticket._reasons.length ? `
+          <div class="ai-ticket-rationale">
+            <span class="ai-rationale-label">&#10024; AI Match Rationale:</span>
+            <span class="ai-rationale-text">${escapeHtml(ticket._reasons.join(" &middot; "))}</span>
+          </div>
+        ` : ""}
+      </article>
+    `;
+  }).join("");
 }
 
-function renderTicketSearchResults() {
-  const input = document.querySelector("#ticketSearchInput");
-  const resultsEl = document.querySelector("#ticketSearchResults");
-  if (!input || !resultsEl) return;
-  const query = clean(input.value);
-  const id = extractTicketId(query);
-  if (!id) {
-    resultsEl.className = "ops-results empty";
-    resultsEl.innerHTML = "Enter a ticket ID to search.";
-    return;
-  }
-  const ticket = findExactTicket(id);
-  const watchMatches = findWatchlistMatches(id);
-  if (!ticket) {
-    resultsEl.className = "ops-results empty";
-    resultsEl.innerHTML = `No results for <strong>${escapeHtml(id)}</strong>.${
-      watchMatches.length ? renderWatchlistMatches(watchMatches) : ""
-    }`;
-    return;
-  }
-  resultsEl.className = "ops-results";
-  resultsEl.innerHTML = `
-    ${renderTicketFullDetail(ticket)}
-    ${watchMatches.length ? renderWatchlistMatches(watchMatches) : ""}
+function openAiSearchModal(initialQuery = "") {
+  closeOpsModal();
+  closeMetricModal();
+
+  const query = initialQuery || "";
+  const result = executeAiSearchQuery(query) || {
+    query: "",
+    detected: { agents: [], channels: [], misses: [], intents: [] },
+    total: 0,
+    cleanCount: 0,
+    missCount: 0,
+    complianceRate: 100,
+    highImpactCount: 0,
+    aiBrief: "Enter a ticket ID, agent name, support channel, requirement miss (e.g. Header Issue), or natural language query to begin AI Search.",
+    tickets: [],
+    watchlist: [],
+  };
+
+  const modal = document.createElement("div");
+  modal.className = "modal-backdrop";
+  modal.dataset.opsModal = "true";
+  modal.dataset.aiSearchModal = "true";
+  modal.innerHTML = `
+    <section class="metric-modal ios-ai-search-modal" role="dialog" aria-modal="true" aria-label="AI Search Intelligence">
+      <header class="ios-modal-header">
+        <div class="ios-modal-title-group">
+          <div class="ios-modal-badge tone-primary">
+            <span class="ai-sparkle-icon">&#10024;</span>
+          </div>
+          <div>
+            <strong class="ios-modal-title">AI Search Intelligence</strong>
+            <span class="ios-modal-subtitle">${result.query ? `${result.total} results found for &ldquo;${escapeHtml(result.query)}&rdquo;` : "Intelligent Natural Language & Ticket Search Agent"}</span>
+          </div>
+        </div>
+        <button type="button" class="ios-close-btn" data-close-ops aria-label="Close">&times;</button>
+      </header>
+
+      <div class="ai-search-briefing-box">
+        <div class="ai-briefing-header">
+          <strong class="ai-briefing-title"><span class="ai-sparkle-glyph">&#10024;</span> AI Search Agent Synthesis</strong>
+          ${result.total > 0 ? `<span class="ai-compliance-pill ${result.complianceRate >= 80 ? "pass" : "fail"}">${result.complianceRate}% Compliance</span>` : ""}
+        </div>
+        <p class="ai-briefing-text">${escapeHtml(result.aiBrief)}</p>
+        
+        <div class="ai-detected-chips">
+          ${result.detected.agents.map((a) => `<span class="ai-tag-chip agent">Agent: ${escapeHtml(a)}</span>`).join("")}
+          ${result.detected.channels.map((c) => `<span class="ai-tag-chip channel">Channel: ${escapeHtml(c)}</span>`).join("")}
+          ${result.detected.misses.map((m) => `<span class="ai-tag-chip miss">Miss: ${escapeHtml(m)}</span>`).join("")}
+          ${result.detected.intents.map((i) => `<span class="ai-tag-chip intent">Filter: ${escapeHtml(i)}</span>`).join("")}
+        </div>
+      </div>
+
+      <div class="ios-modal-search-bar">
+        <span class="ios-search-icon">&#128269;</span>
+        <input type="text" id="aiSearchModalInput" class="ios-search-input" value="${escapeHtml(result.query)}" placeholder="Refine query (e.g. Alice header issue, Voice score &lt; 85, clean tickets)..." />
+        <button type="button" class="ios-pill-btn" id="aiSearchModalBtn">&#10024; Search</button>
+      </div>
+
+      <div class="ios-modal-content-wrap">
+        <div class="ios-ticket-list" id="aiSearchModalResultsList">
+          ${renderAiSearchTicketCards(result.tickets)}
+        </div>
+        ${result.watchlist.length ? renderWatchlistMatches(result.watchlist) : ""}
+      </div>
+    </section>
   `;
+  document.body.appendChild(modal);
+  document.querySelector("#aiSearchModalInput")?.focus();
 }
 
-// Exact match only - a ticket ID either exists or it doesn't, no fuzzy
-// suggestions. Checks the live upload first, then locally stored history.
-function findExactTicket(id) {
-  const needle = clean(id);
-  if (!needle) return null;
-  const live = (currentPayload?.agents || []).flatMap((agent) => agent.tickets).find((ticket) => clean(ticket.ticketId) === needle);
-  if (live) return live;
-  return ticketHistory[needle] || null;
+function openTicketSearchModal() {
+  openAiSearchModal("");
 }
 
 function renderTicketFullDetail(ticket) {
-  const requirementItems = buildRequirementDisplay(ticket);
+  const ticketId = ticket.id || ticket.ticketId;
+  const misses = getTicketMisses(ticket);
   const rawTags = ticket.rawTags || [];
   return `
     <article class="memory-card">
       <div>
-        <strong>${renderTicketLink(ticket.ticketId)}</strong>
+        <strong>${renderTicketLink(ticketId)}</strong>
         <span>${escapeHtml(ticket.date || "-")} | ${escapeHtml(ticket.agent || "-")} | ${escapeHtml(ticket.channel || "-")}</span>
       </div>
       ${ticket.isMergedChild ? `<div class="memory-line"><b>Status</b>: Merged ticket - not auditable</div>` : ""}
       <div class="memory-line"><b>Subject</b>: ${escapeHtml(ticket.subject || "-")}</div>
       <div class="memory-line"><b>Module</b>: ${escapeHtml(ticket.module || "-")} &nbsp; <b>Feature</b>: ${escapeHtml(ticket.feature || "-")}</div>
-      <div class="memory-line"><b>Organization</b>: ${escapeHtml(ticket.organization || "-")}</div>
-      <div class="memory-line"><b>Satisfaction</b>: ${escapeHtml(ticket.satisfaction || "-")}</div>
-      ${
-        ticket.channel === "Chat"
-          ? `<div class="memory-line"><b>Chat duration</b>: ${escapeHtml(ticket.chatDuration || "-")}</div>`
-          : ""
-      }
-      ${
-        ticket.channel === "Voice"
-          ? `<div class="memory-line"><b>Call duration</b>: ${escapeHtml(ticket.callDuration || "-")} min &nbsp; <b>Talk time</b>: ${escapeHtml(ticket.callTalkTime || "-")} min</div>`
-          : ""
-      }
+      ${ticket.organization ? `<div class="memory-line"><b>Organization</b>: ${escapeHtml(ticket.organization)}</div>` : ""}
+      ${ticket.satisfaction ? `<div class="memory-line"><b>Satisfaction</b>: ${escapeHtml(ticket.satisfaction)}</div>` : ""}
       <div class="memory-line"><b>Requirement Check</b></div>
-      <div class="memory-tags">${renderRequirementChecks(requirementItems)}</div>
-      <div class="memory-line"><b>Worksheet tags</b>: ${rawTags.length ? escapeHtml(rawTags.join(", ")) : "-"}</div>
-      <div class="memory-line muted">Score ${ticket.score ?? "-"} | Stored from ${escapeHtml(ticket.sourceFile || "current upload")}${
-        ticket.uploadedAt ? ` on ${escapeHtml(formatDateTime(ticket.uploadedAt))}` : ""
+      <div class="memory-tags">
+        ${misses.length ? misses.map((m) => `<span class="check-pill fail">&#10007; ${escapeHtml(m)}</span>`).join("") : `<span class="check-pill pass">&#10003; Clean</span>`}
+      </div>
+      ${rawTags.length ? `<div class="memory-line"><b>Worksheet tags</b>: ${escapeHtml(rawTags.join(", "))}</div>` : ""}
+      <div class="memory-line muted">Score ${ticket.score ?? "-"}${
+        ticket.copiedAt ? ` | Sampled on ${escapeHtml(formatDateTime(ticket.copiedAt))}` : ticket.uploadedAt ? ` | Stored on ${escapeHtml(formatDateTime(ticket.uploadedAt))}` : ""
       }</div>
     </article>
   `;
@@ -2632,10 +4439,10 @@ function extractTicketId(value) {
 function findTicketMemoryMatches(query) {
   const needle = clean(query);
   if (!needle) return [];
-  const historyMatches = Object.values(ticketHistory)
-    .map((ticket) => ({ ticket, distance: ticketMatchDistance(needle, ticket.ticketId) }))
+  const historyMatches = Object.values(samplerIntelligence)
+    .map((ticket) => ({ ticket, distance: ticketMatchDistance(needle, ticket.id || ticket.ticketId) }))
     .filter((entry) => entry.distance <= Math.max(2, Math.floor(needle.length * 0.18)))
-    .sort((a, b) => a.distance - b.distance || clean(b.ticket.uploadedAt).localeCompare(clean(a.ticket.uploadedAt)))
+    .sort((a, b) => a.distance - b.distance || clean(b.ticket.copiedAt || b.ticket.uploadedAt).localeCompare(clean(a.ticket.copiedAt || a.ticket.uploadedAt)))
     .map((entry) => entry.ticket);
   const liveMatches = (currentPayload?.agents || [])
     .flatMap((agent) => agent.tickets)
@@ -2927,9 +4734,15 @@ function getMonthKey(dateText) {
 
 function parseDateText(dateText) {
   const text = clean(dateText);
-  const match = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (!match) return null;
-  return new Date(Date.UTC(Number(match[3]), Number(match[1]) - 1, Number(match[2])));
+  const slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    return new Date(Date.UTC(Number(slashMatch[3]), Number(slashMatch[1]) - 1, Number(slashMatch[2])));
+  }
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    return new Date(Date.UTC(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3])));
+  }
+  return null;
 }
 
 function formatLongDate(date) {
@@ -2963,12 +4776,12 @@ function getMonthWindow(monthKey) {
 }
 
 function buildMonthlySummary(agentName) {
-  const tickets = Object.values(ticketHistory)
+  const tickets = Object.values(samplerIntelligence)
     .filter((ticket) => ticket.agent === agentName)
-    .sort((a, b) => clean(a.date).localeCompare(clean(b.date)) || clean(a.ticketId).localeCompare(clean(b.ticketId)));
+    .sort((a, b) => clean(a.date).localeCompare(clean(b.date)) || clean(a.id || a.ticketId).localeCompare(clean(b.id || b.ticketId)));
   const grouped = {};
   for (const ticket of tickets) {
-    const key = ticket.monthKey || getMonthKey(ticket.date);
+    const key = (ticket.date ? computeQaMonthKey(ticket.date) : null) || ticket.monthKey || getMonthKey(ticket.date);
     grouped[key] ||= [];
     grouped[key].push(ticket);
   }
@@ -2976,7 +4789,7 @@ function buildMonthlySummary(agentName) {
     .sort(([a], [b]) => b.localeCompare(a))
     .map(([monthKey, monthTickets]) => ({
       monthKey,
-      label: formatMonthName(monthKey),
+      label: formatMonthLabel(monthKey) || formatMonthName(monthKey),
       window: getMonthWindow(monthKey),
       total: monthTickets.length,
       channels: countBy(monthTickets, (ticket) => ticket.channel),
@@ -3001,17 +4814,27 @@ function getCleanRate(tickets) {
 }
 
 function getTicketMisses(ticket) {
-  const activeChecks = Object.fromEntries((ticket.checks || []).map((check) => [check.label, check.active]));
+  if (!ticket) return [];
+  if (Array.isArray(ticket.misses)) return ticket.misses;
+  const activeChecks = new Set(
+    (ticket.checks || [])
+      .filter((check) => check && check.active)
+      .map((check) => clean(check.label).toLowerCase())
+  );
+  const tags = new Set((ticket.tags || []).map((t) => clean(t).toLowerCase()));
   const misses = [];
-  if (activeChecks["Default subject"]) misses.push("Default Subject");
-  if (activeChecks["Generated subject"]) misses.push("Generated Subject");
-  if (activeChecks["Header issue"]) misses.push("Header Issue");
-  if (activeChecks["Module blank"]) misses.push("Blank Module");
-  if (activeChecks["Feature blank"]) misses.push("Blank Feature");
-  if (activeChecks["Organization blank"]) misses.push("Missing Org");
-  if (activeChecks["Email unresolved/no hold"]) misses.push("Email No Hold");
-  if (activeChecks["Talk time mismatch"]) misses.push("Suspicious Talk Time");
-  if (activeChecks["Unsatisfied"]) misses.push("Low CSAT");
+
+  if (activeChecks.has("default subject") || tags.has("default subject")) misses.push("Default Subject");
+  if (activeChecks.has("generated subject") || tags.has("generated subject")) misses.push("Generated Subject");
+  if (activeChecks.has("header issue") || tags.has("header issue")) misses.push("Header Issue");
+  if (activeChecks.has("module blank") || tags.has("blank module")) misses.push("Blank Module");
+  if (activeChecks.has("feature blank") || tags.has("blank feature")) misses.push("Blank Feature");
+  if (activeChecks.has("organization blank") || tags.has("missing org") || tags.has("blank org")) misses.push("Missing Org");
+  if (activeChecks.has("email unresolved/no hold") || tags.has("email no hold")) misses.push("Email No Hold");
+  if (activeChecks.has("talk time mismatch") || tags.has("suspicious talk time")) misses.push("Suspicious Talk Time");
+  if (activeChecks.has("unsatisfied") || tags.has("low csat") || tags.has("bad csat")) misses.push("Low CSAT");
+  if (activeChecks.has("missing jira") || tags.has("missing jira")) misses.push("Missing Jira");
+
   return misses;
 }
 
@@ -3026,6 +4849,7 @@ function getMajorMisses(tickets) {
     "Email No Hold": "For unresolved emails, stop leaving both resolution time and hold reason blank.",
     "Suspicious Talk Time": "Review calls where talk time is far lower than total call duration.",
     "Low CSAT": "Review low-satisfaction tickets for communication, ownership, and closure quality.",
+    "Missing Jira": "Attach JIRA defect/improvement link when escalating software bugs.",
   };
   const counts = {};
   for (const ticket of tickets) {
@@ -3040,8 +4864,1628 @@ function getMajorMisses(tickets) {
       count,
       rate: tickets.length ? Math.round((count / tickets.length) * 100) : 0,
       severity: count >= 3 || count / Math.max(tickets.length, 1) >= 0.3 ? "Regular default" : "Occasional",
-      advice: missAdvice[name],
+      advice: missAdvice[name] || "Follow standard QA workflow.",
     }));
+}
+
+// Phase 6 Operational Intelligence: Channel x Miss Breakdown
+function buildChannelMissBreakdown(tickets) {
+  const channels = ["Chat", "Voice", "Email"];
+  const breakdown = {};
+  for (const ch of channels) {
+    const chTickets = tickets.filter((t) => t.channel === ch);
+    const missCounts = {};
+    for (const t of chTickets) {
+      for (const m of getTicketMisses(t)) {
+        missCounts[m] = (missCounts[m] || 0) + 1;
+      }
+    }
+    const total = chTickets.length;
+    const clean = chTickets.filter((t) => getTicketMisses(t).length === 0).length;
+    const cleanRate = total ? Math.round((clean / total) * 100) : 0;
+    breakdown[ch] = {
+      channel: ch,
+      total,
+      clean,
+      cleanRate,
+      misses: Object.entries(missCounts).map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count),
+    };
+  }
+  return breakdown;
+}
+
+// ================= Phase 5: Analytics & Intelligence Engine =================
+
+const defaultCompletedWeek = getMostRecentCompletedReportingWeek();
+var activeAnalyticsTab = "performance";
+var activePerformancePeriod = "week";
+var activeAnalyticsYear = defaultCompletedWeek.year;
+var activeAnalyticsWeek = defaultCompletedWeek.weekNumber;
+var activeAnalyticsMonth = computeQaMonthKey(defaultCompletedWeek.dateKey);
+var activeAnalyticsQuarter = computeQaQuarterKey(defaultCompletedWeek.dateKey);
+
+let intelSearchQuery = "";
+let intelPeriodFilter = "all";
+let intelAuditorFilter = "all";
+let intelAgentFilter = "all";
+let intelChannelFilter = "all";
+let intelCleanFilter = "all";
+
+// Phase 5B: Weekly Analytics Engine
+function buildWeeklyAnalytics(year, weekNumber) {
+  const targetYear = Number(year) || new Date().getFullYear();
+  const targetWeek = Number(weekNumber) || 1;
+  const allTickets = Object.values(samplerIntelligence);
+
+  const priorWeekNum = targetWeek > 1 ? targetWeek - 1 : 52;
+  const priorYear = targetWeek > 1 ? targetYear : targetYear - 1;
+
+  const tickets = [];
+  const priorTickets = [];
+
+  for (const ticket of allTickets) {
+    if (!ticket.date) continue;
+    const w = computeQaWeekNumber(ticket.date);
+    let y = dateKeyToDate(ticket.date).getFullYear();
+    const anchor = getReportingYearAnchorKey(y);
+    if (ticket.date < anchor) y -= 1;
+    if (w === targetWeek && y === targetYear) tickets.push(ticket);
+    else if (w === priorWeekNum && y === priorYear) priorTickets.push(ticket);
+  }
+
+  const popRecords = [];
+  for (const r of Object.values(workbookRequirementIntelligence)) {
+    if (!r.samplingDate) continue;
+    if (r.qaWeek !== undefined && r.qaQuarter !== undefined) {
+      const recYear = Number(r.qaQuarter.slice(0, 4));
+      if (r.qaWeek === targetWeek && recYear === targetYear) popRecords.push(r);
+    } else {
+      let y = dateKeyToDate(r.samplingDate).getFullYear();
+      const anchor = getReportingYearAnchorKey(y);
+      if (r.samplingDate < anchor) y -= 1;
+      const w = computeQaWeekNumber(r.samplingDate);
+      if (w === targetWeek && y === targetYear) popRecords.push(r);
+    }
+  }
+  const population = rollupPopulationRequirementIntelligence(popRecords);
+
+  const totalSampled = tickets.length;
+  const cleanCount = tickets.filter((t) => getTicketMisses(t).length === 0).length;
+  const missedCount = totalSampled - cleanCount;
+  const cleanRate = totalSampled ? Math.round((cleanCount / totalSampled) * 100) : 0;
+  const channels = countBy(tickets, (t) => t.channel);
+  const misses = getMajorMisses(tickets);
+
+  const agentMap = {};
+  for (const t of tickets) {
+    agentMap[t.agent] ||= [];
+    agentMap[t.agent].push(t);
+  }
+  const agents = Object.entries(agentMap)
+    .map(([agent, agentTickets]) => ({
+      agent,
+      total: agentTickets.length,
+      clean: agentTickets.filter((t) => getTicketMisses(t).length === 0).length,
+      cleanRate: getCleanRate(agentTickets),
+      channels: countBy(agentTickets, (t) => t.channel),
+      misses: getMajorMisses(agentTickets),
+      tickets: agentTickets,
+    }))
+    .sort((a, b) => a.cleanRate - b.cleanRate || b.total - a.total);
+
+  const auditorMap = {};
+  for (const t of tickets) {
+    const aud = t.auditor || "Unknown";
+    auditorMap[aud] ||= [];
+    auditorMap[aud].push(t);
+  }
+  const auditors = Object.entries(auditorMap)
+    .map(([auditor, audTickets]) => ({
+      auditor,
+      total: audTickets.length,
+      clean: audTickets.filter((t) => getTicketMisses(t).length === 0).length,
+      cleanRate: getCleanRate(audTickets),
+      channels: countBy(audTickets, (t) => t.channel),
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  const priorTotal = priorTickets.length;
+  const priorCleanRate = priorTotal ? getCleanRate(priorTickets) : null;
+  const wowDelta = (priorCleanRate !== null && totalSampled > 0) ? cleanRate - priorCleanRate : null;
+
+  return {
+    periodType: "week",
+    year: targetYear,
+    weekNumber: targetWeek,
+    label: `Week ${targetWeek} (${targetYear})`,
+    window: getWeekWindow(targetWeek, targetYear),
+    population,
+    totalSampled,
+    cleanCount,
+    missedCount,
+    cleanRate,
+    channels,
+    channelMisses: buildChannelMissBreakdown(tickets),
+    misses,
+    agents,
+    auditors,
+    priorTotal,
+    priorCleanRate,
+    wowDelta,
+    tickets,
+  };
+}
+
+// Phase 5C: Monthly Analytics Engine
+function buildMonthlyAnalytics(monthKey) {
+  const allTickets = Object.values(samplerIntelligence);
+  const tickets = allTickets.filter((ticket) => computeQaMonthKey(ticket.date) === monthKey);
+
+  const popRecords = Object.values(workbookRequirementIntelligence).filter((r) => computeQaMonthKey(r.samplingDate) === monthKey);
+  const population = rollupPopulationRequirementIntelligence(popRecords);
+
+  const totalSampled = tickets.length;
+  const cleanCount = tickets.filter((t) => getTicketMisses(t).length === 0).length;
+  const missedCount = totalSampled - cleanCount;
+  const cleanRate = totalSampled ? Math.round((cleanCount / totalSampled) * 100) : 0;
+  const channels = countBy(tickets, (t) => t.channel);
+  const misses = getMajorMisses(tickets);
+
+  const agentMap = {};
+  for (const t of tickets) {
+    agentMap[t.agent] ||= [];
+    agentMap[t.agent].push(t);
+  }
+  const agents = Object.entries(agentMap)
+    .map(([agent, agentTickets]) => ({
+      agent,
+      total: agentTickets.length,
+      clean: agentTickets.filter((t) => getTicketMisses(t).length === 0).length,
+      cleanRate: getCleanRate(agentTickets),
+      channels: countBy(agentTickets, (t) => t.channel),
+      misses: getMajorMisses(agentTickets),
+      tickets: agentTickets,
+    }))
+    .sort((a, b) => a.cleanRate - b.cleanRate || b.total - a.total);
+
+  const auditorMap = {};
+  for (const t of tickets) {
+    const aud = t.auditor || "Unknown";
+    auditorMap[aud] ||= [];
+    auditorMap[aud].push(t);
+  }
+  const auditors = Object.entries(auditorMap)
+    .map(([auditor, audTickets]) => ({
+      auditor,
+      total: audTickets.length,
+      clean: audTickets.filter((t) => getTicketMisses(t).length === 0).length,
+      cleanRate: getCleanRate(audTickets),
+      channels: countBy(audTickets, (t) => t.channel),
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  const priorMonthKey = shiftMonthKey(monthKey, -1);
+  const priorTickets = allTickets.filter((ticket) => computeQaMonthKey(ticket.date) === priorMonthKey);
+  const priorTotal = priorTickets.length;
+  const priorCleanRate = priorTotal ? getCleanRate(priorTickets) : null;
+  const momDelta = (priorCleanRate !== null && totalSampled > 0) ? cleanRate - priorCleanRate : null;
+
+  return {
+    periodType: "month",
+    monthKey,
+    label: formatMonthLabel(monthKey) || formatMonthName(monthKey),
+    window: getMonthWindow(monthKey),
+    population,
+    totalSampled,
+    cleanCount,
+    missedCount,
+    cleanRate,
+    channels,
+    channelMisses: buildChannelMissBreakdown(tickets),
+    misses,
+    agents,
+    auditors,
+    priorTotal,
+    priorCleanRate,
+    momDelta,
+    tickets,
+  };
+}
+
+// Phase 5D: Quarterly Analytics Engine
+function buildQuarterlyAnalytics(quarterKey) {
+  const details = getQuarterDetails(quarterKey);
+  const [yearStr] = quarterKey.split("-");
+  const targetYear = Number(yearStr) || new Date().getFullYear();
+  const allTickets = Object.values(samplerIntelligence);
+
+  const popRecords = Object.values(workbookRequirementIntelligence).filter((r) => {
+    if (!r.samplingDate) return false;
+    let y = dateKeyToDate(r.samplingDate).getFullYear();
+    const anchor = getReportingYearAnchorKey(y);
+    if (r.samplingDate < anchor) y -= 1;
+    const w = computeQaWeekNumber(r.samplingDate);
+    return w >= details.startWeek && w <= details.endWeek && y === targetYear;
+  });
+  const population = rollupPopulationRequirementIntelligence(popRecords);
+
+  const tickets = allTickets.filter((ticket) => {
+    if (!ticket.date) return false;
+    const w = computeQaWeekNumber(ticket.date);
+    let y = dateKeyToDate(ticket.date).getFullYear();
+    const anchor = getReportingYearAnchorKey(y);
+    if (ticket.date < anchor) y -= 1;
+    return w >= details.startWeek && w <= details.endWeek && y === targetYear;
+  });
+
+  const totalSampled = tickets.length;
+  const cleanCount = tickets.filter((t) => getTicketMisses(t).length === 0).length;
+  const missedCount = totalSampled - cleanCount;
+  const cleanRate = totalSampled ? Math.round((cleanCount / totalSampled) * 100) : 0;
+  const channels = countBy(tickets, (t) => t.channel);
+  const misses = getMajorMisses(tickets);
+
+  const ticketsByWeek = {};
+  for (const t of tickets) {
+    const w = computeQaWeekNumber(t.date);
+    ticketsByWeek[w] ||= [];
+    ticketsByWeek[w].push(t);
+  }
+  const weeklyTrend = [];
+  for (let w = details.startWeek; w <= details.endWeek; w++) {
+    const weekTickets = ticketsByWeek[w] || [];
+    const weekTotal = weekTickets.length;
+    const weekClean = weekTickets.filter((t) => getTicketMisses(t).length === 0).length;
+    weeklyTrend.push({
+      weekNumber: w,
+      total: weekTotal,
+      cleanCount: weekClean,
+      cleanRate: weekTotal ? Math.round((weekClean / weekTotal) * 100) : null,
+    });
+  }
+
+  const agentMap = {};
+  for (const t of tickets) {
+    agentMap[t.agent] ||= [];
+    agentMap[t.agent].push(t);
+  }
+  const agents = Object.entries(agentMap)
+    .map(([agent, agentTickets]) => ({
+      agent,
+      total: agentTickets.length,
+      clean: agentTickets.filter((t) => getTicketMisses(t).length === 0).length,
+      cleanRate: getCleanRate(agentTickets),
+      channels: countBy(agentTickets, (t) => t.channel),
+      misses: getMajorMisses(agentTickets),
+      tickets: agentTickets,
+    }))
+    .sort((a, b) => a.cleanRate - b.cleanRate || b.total - a.total);
+
+  const auditorMap = {};
+  for (const t of tickets) {
+    const aud = t.auditor || "Unknown";
+    auditorMap[aud] ||= [];
+    auditorMap[aud].push(t);
+  }
+  const auditors = Object.entries(auditorMap)
+    .map(([auditor, audTickets]) => ({
+      auditor,
+      total: audTickets.length,
+      clean: audTickets.filter((t) => getTicketMisses(t).length === 0).length,
+      cleanRate: getCleanRate(audTickets),
+      channels: countBy(audTickets, (t) => t.channel),
+    }))
+    .sort((a, b) => b.total - a.total);
+
+  const priorQKey = getPriorQuarterKey(quarterKey);
+  const priorDetails = getQuarterDetails(priorQKey);
+  const [priorYStr] = priorQKey.split("-");
+  const priorYear = Number(priorYStr);
+  const priorTickets = allTickets.filter((ticket) => {
+    if (!ticket.date) return false;
+    const w = computeQaWeekNumber(ticket.date);
+    let y = dateKeyToDate(ticket.date).getFullYear();
+    const anchor = getReportingYearAnchorKey(y);
+    if (ticket.date < anchor) y -= 1;
+    return w >= priorDetails.startWeek && w <= priorDetails.endWeek && y === priorYear;
+  });
+  const priorTotal = priorTickets.length;
+  const priorCleanRate = priorTotal ? getCleanRate(priorTickets) : null;
+  const qoqDelta = (priorCleanRate !== null && totalSampled > 0) ? cleanRate - priorCleanRate : null;
+
+  return {
+    periodType: "quarter",
+    quarterKey,
+    label: details.label,
+    population,
+    totalSampled,
+    cleanCount,
+    missedCount,
+    cleanRate,
+    channels,
+    channelMisses: buildChannelMissBreakdown(tickets),
+    misses,
+    agents,
+    auditors,
+    weeklyTrend,
+    priorTotal,
+    priorCleanRate,
+    qoqDelta,
+    tickets,
+  };
+}
+
+var expandedSystemicMiss = null;
+var expandedAgentDrilldown = null;
+var activeAiSummaryPeriodType = "week";
+var activeAiSummaryDate = todayDateKey();
+var activeTicketPopover = null;
+
+function shiftDayKey(dateKey, days) {
+  const d = dateKeyToDate(dateKey);
+  d.setDate(d.getDate() + days);
+  return dateToKey(d);
+}
+
+function buildDailyAnalytics(dateKey) {
+  const normDateKey = normalizeDateKey(dateKey) || todayDateKey();
+  const allTickets = Object.values(samplerIntelligence);
+  const tickets = allTickets.filter((ticket) => normalizeDateKey(ticket.date) === normDateKey);
+
+  const popRecord = workbookRequirementIntelligence[normDateKey];
+  const popRecords = popRecord ? [popRecord] : [];
+  const population = rollupPopulationRequirementIntelligence(popRecords);
+
+  const totalSampled = tickets.length;
+  const cleanCount = tickets.filter((t) => getTicketMisses(t).length === 0).length;
+  const missedCount = totalSampled - cleanCount;
+  const cleanRate = totalSampled ? Math.round((cleanCount / totalSampled) * 100) : 0;
+  const channels = countBy(tickets, (t) => t.channel);
+  const misses = getMajorMisses(tickets);
+
+  const agentMap = {};
+  for (const t of tickets) {
+    agentMap[t.agent] ||= [];
+    agentMap[t.agent].push(t);
+  }
+  const agents = Object.entries(agentMap)
+    .map(([agent, agentTickets]) => ({
+      agent,
+      total: agentTickets.length,
+      clean: agentTickets.filter((t) => getTicketMisses(t).length === 0).length,
+      cleanRate: getCleanRate(agentTickets),
+      channels: countBy(agentTickets, (t) => t.channel),
+      misses: getMajorMisses(agentTickets),
+      tickets: agentTickets,
+    }))
+    .sort((a, b) => a.cleanRate - b.cleanRate || b.total - a.total);
+
+  return {
+    periodType: "day",
+    dateKey: normDateKey,
+    label: formatWorksheetDateLabel(normDateKey),
+    population,
+    totalSampled,
+    cleanCount,
+    missedCount,
+    cleanRate,
+    channels,
+    channelMisses: buildChannelMissBreakdown(tickets),
+    misses,
+    agents,
+    tickets,
+  };
+}
+
+function isHighImpactTicket(ticket) {
+  const misses = Array.isArray(ticket.misses) ? ticket.misses : getTicketMisses(ticket);
+  if (misses.length > 2) return true;
+  if (misses.some((m) => m === "Header Issue" || m === "Blank Module" || m === "Blank Feature" || m === "Email No Hold" || m === "Missing Jira")) return true;
+  return false;
+}
+
+function getMissTicketsForCategory(analytics, missCategory) {
+  const popTickets = (analytics.population?.missTickets || []).filter((t) => (t.misses || []).includes(missCategory));
+  if (popTickets.length) return popTickets;
+  const sampled = (analytics.tickets || []).filter((t) => getTicketMisses(t).includes(missCategory));
+  return sampled.map((t) => ({
+    id: t.id || t.ticketId,
+    agent: t.agent,
+    channel: t.channel,
+    date: t.date,
+    misses: getTicketMisses(t),
+  }));
+}
+
+function getAgentMissTickets(analytics, agentName) {
+  const popTickets = (analytics.population?.missTickets || []).filter((t) => t.agent === agentName);
+  if (popTickets.length) return popTickets;
+  const sampled = (analytics.tickets || []).filter((t) => t.agent === agentName && getTicketMisses(t).length > 0);
+  return sampled.map((t) => ({
+    id: t.id || t.ticketId,
+    agent: t.agent,
+    channel: t.channel,
+    date: t.date,
+    misses: getTicketMisses(t),
+  }));
+}
+
+function getAgentHighImpactTickets(analytics, agentName) {
+  const popTickets = (analytics.population?.missTickets || []).filter((t) => t.agent === agentName && isHighImpactTicket(t));
+  if (popTickets.length) return popTickets;
+  const sampled = (analytics.tickets || []).filter((t) => t.agent === agentName && isHighImpactTicket(t));
+  return sampled.map((t) => ({
+    id: t.id || t.ticketId,
+    agent: t.agent,
+    channel: t.channel,
+    date: t.date,
+    misses: getTicketMisses(t),
+  }));
+}
+
+// Phase 5E: Deterministic AI Management Summary Generator
+function generateAiManagementSummary(analytics) {
+  const pop = analytics?.population;
+  const hasPopData = pop && pop.hasData && pop.totalEligible > 0;
+  const hasSampledData = analytics && analytics.totalSampled > 0;
+
+  if (!hasPopData && !hasSampledData) {
+    return `
+      <div class="ai-summary-box">
+        <div class="ai-summary-header">
+          <strong>AI Management Summary</strong>
+          <span class="ai-summary-badge">${escapeHtml(analytics?.label || "No Data")}</span>
+        </div>
+        <p class="muted">No workbook or sampled tickets recorded for this period. Upload daily worksheets and sample picks to generate an AI management summary.</p>
+      </div>
+    `;
+  }
+
+  const { totalSampled, cleanCount, cleanRate, misses, agents, channels, wowDelta, momDelta, qoqDelta } = analytics;
+  const delta = wowDelta ?? momDelta ?? qoqDelta;
+  const deltaType = wowDelta !== undefined ? "WoW" : momDelta !== undefined ? "MoM" : "QoQ";
+
+  let trendText = "";
+  if (delta !== null) {
+    if (delta > 0) {
+      trendText = ` Sampled cleanliness improved by <strong>+${delta}% ${deltaType}</strong> compared to the previous period.`;
+    } else if (delta < 0) {
+      trendText = ` Sampled cleanliness declined by <strong>${delta}% ${deltaType}</strong> compared to the previous period.`;
+    } else {
+      trendText = ` Sampled cleanliness held steady at <strong>0% ${deltaType}</strong> change compared to the previous period.`;
+    }
+  }
+
+  const effectiveMisses = hasPopData ? pop.misses : misses;
+  const topMisses = effectiveMisses.slice(0, 3);
+  const missItemsHtml = topMisses.length
+    ? topMisses
+        .map(
+          (m) =>
+            `<li><strong>${escapeHtml(m.name)}</strong>: ${m.count} affected tickets (${m.rate}% miss rate across analyzed tickets). <em>Action:</em> Stop this pattern across daily ticket logging.</li>`,
+        )
+        .join("")
+    : `<li>No recurring requirement check misses recorded in this period.</li>`;
+
+  const popAgentsList = hasPopData ? Object.values(pop.agents) : [];
+  const topAgents = popAgentsList.filter((a) => a.cleanRate >= 90 && a.total >= 3).slice(-3).reverse();
+  const coachingAgents = popAgentsList.filter((a) => a.missRate > 20 && a.total >= 3).slice(0, 3);
+
+  const topAgentsHtml = topAgents.length
+    ? topAgents.map((a) => `<li><strong>${escapeHtml(a.agent)}</strong>: ${a.cleanRate}% clean (${a.clean}/${a.total} analyzed tickets)</li>`).join("")
+    : `<li>All active agents maintain balanced requirement adherence.</li>`;
+
+  const coachingAgentsHtml = coachingAgents.length
+    ? coachingAgents.map((a) => `<li><strong>${escapeHtml(a.agent)}</strong>: ${a.missRate}% miss rate (${a.missed} misses across ${a.total} analyzed tickets). Top issue: <em>${escapeHtml(a.misses[0]?.name || "Requirement Misses")}</em></li>`).join("")
+    : `<li>No agents exceeded the 20% miss rate coaching threshold.</li>`;
+
+  const channelList = hasPopData
+    ? Object.entries(pop.channels).map(([c, data]) => `${c}: ${data.total} analyzed (${data.cleanRate}% clean, ${data.missRate}% missed)`).join(" | ")
+    : Object.entries(channels).map(([c, count]) => `${c}: ${count} samples (${Math.round((count / Math.max(totalSampled, 1)) * 100)}%)`).join(" | ");
+
+  return `
+    <div class="ai-summary-box">
+      <div class="ai-summary-header">
+        <strong>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          AI Management Summary &middot; ${escapeHtml(analytics.label)}
+        </strong>
+        <span class="ai-summary-badge">${hasPopData ? `${pop.cleanRate}% Team Cleanliness` : `${cleanRate}% Cleanliness`}</span>
+      </div>
+
+      <div class="ai-summary-section">
+        <h4>1. Executive Requirement &amp; Sampling Overview</h4>
+        <p>
+          ${hasPopData ? `Across <strong>${pop.totalEligible.toLocaleString()}</strong> eligible tickets analyzed in N-1 workbooks for this period, the team requirement cleanliness rate was <strong>${pop.cleanRate}%</strong> (${pop.cleanCount.toLocaleString()} clean tickets, <strong>${pop.missedCount.toLocaleString()}</strong> with requirement check issues). ` : ""}
+          From these tickets, <strong>${totalSampled}</strong> audit tickets were sampled with a sampled cleanliness rate of <strong>${cleanRate}%</strong> (${cleanCount} clean picks).${trendText}
+        </p>
+      </div>
+
+      <div class="ai-summary-section">
+        <h4>2. Primary Systemic Misses &amp; SOP Directives</h4>
+        <ul>${missItemsHtml}</ul>
+      </div>
+
+      <div class="ai-summary-section">
+        <h4>3. Agent Quality &amp; Coaching Priorities</h4>
+        <p><strong>Strongest Requirement Cleanliness:</strong></p>
+        <ul>${topAgentsHtml}</ul>
+        <p style="margin-top: 6px;"><strong>Coaching Focus Areas (Highest Miss Rate across Analyzed Tickets):</strong></p>
+        <ul>${coachingAgentsHtml}</ul>
+      </div>
+
+      <div class="ai-summary-section">
+        <h4>4. Support Channel Breakdown</h4>
+        <p>${escapeHtml(channelList || "No channel data")}</p>
+      </div>
+
+      <div class="ai-summary-section">
+        <h4>5. Operational Directives</h4>
+        <ul>
+          <li>Prioritize addressing <strong>${escapeHtml(topMisses[0]?.name || "header cleanliness")}</strong> during team coaching sessions.</li>
+          <li>Reinforce standard logging workflows across high-volume requirement checks.</li>
+          <li>Note: Sampling count is fixed at 1 pick per active agent and does not reflect individual workload or performance.</li>
+        </ul>
+      </div>
+    </div>
+  `;
+}
+
+function renderDeltaBadge(delta, type) {
+  if (delta === null || delta === undefined) {
+    return `<span class="analytics-delta-badge neutral">Baseline</span>`;
+  }
+  if (delta > 0) {
+    return `<span class="analytics-delta-badge positive">+${delta}% ${type}</span>`;
+  }
+  if (delta < 0) {
+    return `<span class="analytics-delta-badge negative">${delta}% ${type}</span>`;
+  }
+  return `<span class="analytics-delta-badge neutral">0% ${type}</span>`;
+}
+
+function renderChannelProgress(channels, total) {
+  if (!total) return `<p class="muted">No channel data.</p>`;
+  return Object.entries(channels)
+    .map(([channel, count]) => {
+      const pct = Math.round((count / total) * 100);
+      return `
+        <div class="channel-bar-row">
+          <span class="channel-bar-label">${escapeHtml(channel)}</span>
+          <div class="channel-bar-wrap">
+            <div class="channel-bar-fill" style="width: ${pct}%"></div>
+          </div>
+          <span class="channel-bar-count">${count} (${pct}%)</span>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderDualKpiGrid(analytics) {
+  const pop = analytics.population || { totalEligible: 0, cleanCount: 0, missedCount: 0, cleanRate: 0, missRate: 0 };
+  const delta = analytics.periodType === "week" ? analytics.wowDelta : analytics.periodType === "month" ? analytics.momDelta : analytics.qoqDelta;
+  const deltaType = analytics.periodType === "week" ? "WoW" : analytics.periodType === "month" ? "MoM" : "QoQ";
+
+  const totalAnalyzed = pop.totalEligible || analytics.totalSampled || 0;
+  const cleanCount = pop.cleanCount !== undefined ? pop.cleanCount : analytics.cleanCount || 0;
+  const cleanRate = pop.totalEligible > 0 ? pop.cleanRate : analytics.cleanRate || 0;
+  const missedCount = totalAnalyzed - cleanCount;
+
+  return `
+    <div class="analytics-kpi-grid">
+      <div class="analytics-kpi-card highlight">
+        <span>Team Cleanliness</span>
+        <strong>${totalAnalyzed > 0 ? `${cleanRate}%` : "—"}</strong>
+        <span class="muted" style="font-size: 11px; margin-top: 4px;">Across all ${totalAnalyzed.toLocaleString()} analyzed tickets</span>
+      </div>
+      <div class="analytics-kpi-card">
+        <span>Total Analyzed Tickets</span>
+        <strong>${totalAnalyzed.toLocaleString()}</strong>
+        <span class="muted" style="font-size: 11px; margin-top: 4px;">${cleanCount.toLocaleString()} clean &middot; ${missedCount.toLocaleString()} with issues</span>
+      </div>
+      <div class="analytics-kpi-card">
+        <span>Sampled Cleanliness</span>
+        <strong style="color: var(--color-primary-dark);">${analytics.totalSampled > 0 ? `${analytics.cleanRate}%` : "—"}</strong>
+        <div style="margin-top: 4px;">${renderDeltaBadge(delta, deltaType)}</div>
+      </div>
+      <div class="analytics-kpi-card">
+        <span>Active Agents</span>
+        <strong>${analytics.agents?.length || Object.keys(pop.agents || {}).length || 0}</strong>
+        <span class="muted" style="font-size: 11px; margin-top: 4px;">Active during this period</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderPerformerCards(analytics) {
+  const pop = analytics.population;
+  const hasPopData = pop && pop.hasData && pop.totalEligible > 0;
+  const popAgentsList = hasPopData ? Object.values(pop.agents) : [];
+  
+  const periodTitle = analytics.periodType === "day" ? "DAY" : analytics.periodType === "week" ? "WEEK" : analytics.periodType === "month" ? "MONTH" : "QUARTER";
+  
+  const qualifying = popAgentsList.filter((a) => a.total >= 3);
+  const candidates = qualifying.length ? qualifying : popAgentsList;
+  
+  let topPerformer = null;
+  let weakPerformer = null;
+  
+  if (candidates.length) {
+    const sortedDesc = [...candidates].sort((a, b) => b.cleanRate - a.cleanRate || b.clean - a.clean || a.total - b.total);
+    const sortedAsc = [...candidates].sort((a, b) => a.cleanRate - b.cleanRate || b.missed - a.missed || b.total - a.total);
+    
+    topPerformer = sortedDesc[0];
+    weakPerformer = sortedAsc[0];
+    if (topPerformer && weakPerformer && topPerformer.agent === weakPerformer.agent && sortedAsc.length > 1) {
+      weakPerformer = sortedAsc[1];
+    }
+  }
+
+  if (!topPerformer && analytics.agents?.length) {
+    const sorted = [...analytics.agents].sort((a, b) => b.cleanRate - a.cleanRate);
+    topPerformer = sorted[0];
+    weakPerformer = sorted[sorted.length - 1];
+  }
+
+  if (!topPerformer && !weakPerformer) {
+    return "";
+  }
+
+  let topAiSummary = "Maintains strong requirement compliance across daily ticket logging.";
+  if (topPerformer) {
+    const topCleanRate = topPerformer.cleanRate ?? (topPerformer.total ? Math.round((topPerformer.clean / topPerformer.total) * 100) : 100);
+    const topMissRate = topPerformer.missRate ?? (100 - topCleanRate);
+    if (topMissRate === 0 || topCleanRate === 100) {
+      topAiSummary = `Maintained a perfect 100% compliance record across all ${topPerformer.total || topPerformer.clean || 0} analyzed tickets with zero requirement misses.`;
+    } else {
+      topAiSummary = `Consistently strong requirement adherence with only a ${topMissRate}% miss rate across ${topPerformer.total} analyzed tickets.`;
+    }
+  }
+
+  let weakAiSummary = "Shows elevated requirement misses requiring focused SOP coaching.";
+  if (weakPerformer) {
+    const missesArray = Array.isArray(weakPerformer.misses)
+      ? weakPerformer.misses
+      : Object.entries(weakPerformer.misses || {}).map(([name, count]) => ({ name, count }));
+    const topMiss = missesArray.sort((a, b) => b.count - a.count)[0];
+    const weakMissRate = weakPerformer.missRate ?? (weakPerformer.total ? Math.round(((weakPerformer.total - weakPerformer.clean) / weakPerformer.total) * 100) : 0);
+    if (topMiss && topMiss.count > 0) {
+      weakAiSummary = `Most misses are concentrated around ${topMiss.name}, accounting for ${topMiss.count} of ${weakPerformer.missed || (weakPerformer.total - weakPerformer.clean)} affected tickets.`;
+    } else {
+      weakAiSummary = `Higher concentration of requirement misses (${weakMissRate}% miss rate) requiring review of standard logging procedures.`;
+    }
+  }
+
+  return `
+    <div class="performer-grid">
+      ${topPerformer ? `
+        <article class="performer-card top-performer">
+          <div class="performer-badge top">Top Performer of ${periodTitle}</div>
+          <strong class="performer-name">${escapeHtml(topPerformer.agent)}</strong>
+          <p class="performer-desc">Strongest requirement adherence this ${periodTitle.toLowerCase()}.</p>
+          <div class="performer-metric">
+            <span class="performer-rate">Miss Rate: <strong>${topPerformer.missRate ?? (100 - (topPerformer.cleanRate || 0))}%</strong></span>
+            <span class="performer-tickets">${topPerformer.clean || 0}/${topPerformer.total || 0} clean tickets</span>
+          </div>
+          <div class="performer-ai">
+            <strong>AI Summary:</strong> ${escapeHtml(topAiSummary)}
+          </div>
+        </article>
+      ` : ""}
+      ${weakPerformer ? `
+        <article class="performer-card weak-performer">
+          <div class="performer-badge weak">Weak Performer of ${periodTitle}</div>
+          <strong class="performer-name">${escapeHtml(weakPerformer.agent)}</strong>
+          <p class="performer-desc">Higher concentration of requirement misses this ${periodTitle.toLowerCase()}.</p>
+          <div class="performer-metric">
+            <span class="performer-rate">Miss Rate: <strong>${weakPerformer.missRate ?? (100 - (weakPerformer.cleanRate || 0))}%</strong></span>
+            <span class="performer-tickets">${weakPerformer.missed || (weakPerformer.total - weakPerformer.clean) || 0} affected tickets (${weakPerformer.total || 0} total)</span>
+          </div>
+          <div class="performer-ai">
+            <strong>AI Summary:</strong> ${escapeHtml(weakAiSummary)}
+          </div>
+        </article>
+      ` : ""}
+    </div>
+  `;
+}
+
+function renderAgentRequirementIntelligenceSection(analytics) {
+  const pop = analytics.population;
+  const agents = analytics.agents || [];
+  const populationAgents = pop?.agents || {};
+
+  if (!agents.length && (!populationAgents || !Object.keys(populationAgents).length)) {
+    return `
+      <div class="analytics-card" style="margin-bottom: 18px;">
+        <header>
+          <strong>Agent Requirement Intelligence</strong>
+          <span>Agents Needing Attention &amp; Requirement Adherence</span>
+        </header>
+        <p class="muted" style="padding: 16px;">No agent data recorded for this period.</p>
+      </div>
+    `;
+  }
+
+  const sampledMap = Object.fromEntries(agents.map((a) => [a.agent, a]));
+  const allAgentNames = [...new Set([...agents.map((a) => a.agent), ...Object.keys(populationAgents || {})])].sort((a, b) => {
+    const popA = populationAgents[a] || { missRate: 0, total: 0 };
+    const popB = populationAgents[b] || { missRate: 0, total: 0 };
+    return popB.missRate - popA.missRate || popB.total - popA.total || a.localeCompare(b);
+  });
+
+  return `
+    <div class="analytics-card" style="margin-bottom: 18px;">
+      <header>
+        <strong>Agent Requirement Intelligence</strong>
+        <span>Agent Performance &middot; Requirement Misses &middot; High-Impact Tickets</span>
+      </header>
+      <div class="modal-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Agent Name</th>
+              <th>High-Impact Tickets</th>
+              <th>Requirement Misses</th>
+              <th>Miss Rate</th>
+              <th>Requirement Misses Breakdown</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${allAgentNames.map((agentName) => {
+              const popData = populationAgents[agentName] || { totalAnalyzed: 0, merged: 0, total: 0, clean: 0, missed: 0, missRate: 0, cleanRate: 0, misses: [] };
+              const sampData = sampledMap[agentName] || { total: 0, clean: 0, misses: [] };
+              const totalAnalyzed = popData.total || sampData.total || 0;
+              const cleanCount = popData.clean !== undefined ? popData.clean : sampData.clean || 0;
+              const missedCount = popData.missed !== undefined ? popData.missed : (sampData.total - sampData.clean) || 0;
+              const missRate = popData.missRate !== undefined ? popData.missRate : (totalAnalyzed ? Math.round((missedCount / totalAnalyzed) * 100) : 0);
+
+              const popMissesList = Array.isArray(popData.misses) && popData.misses.length
+                ? popData.misses
+                : typeof popData.misses === "object" && Object.keys(popData.misses || {}).length
+                ? Object.entries(popData.misses).map(([name, count]) => ({ name, count }))
+                : [];
+
+              const highImpactTickets = getAgentHighImpactTickets(analytics, agentName);
+              const highImpactCount = highImpactTickets.length;
+
+              const reqMissChips = popMissesList.length
+                ? popMissesList.map((m) => `
+                    <button type="button" class="req-miss-chip" data-agent-req-popover="${escapeHtml(agentName)}" data-miss-name="${escapeHtml(m.name)}" title="Click to view ticket IDs">
+                      ${escapeHtml(m.name)} <span class="chip-count">${m.count} &rsaquo;</span>
+                    </button>
+                  `).join(" ")
+                : `<span class="check yes" style="font-size: 11px;">${totalAnalyzed > 0 ? "100% Clean" : "No Tickets"}</span>`;
+
+              const isExpanded = expandedAgentDrilldown === agentName;
+              const agentMissTickets = getAgentMissTickets(analytics, agentName);
+
+              return `
+                <tr>
+                  <td><strong>${escapeHtml(agentName)}</strong></td>
+                  <td>
+                    <button type="button" class="high-impact-badge-btn ${highImpactCount > 0 ? "" : "none"}" data-open-high-impact="${escapeHtml(agentName)}" ${highImpactCount === 0 ? "disabled" : ""}>
+                      ${highImpactCount} High-Impact
+                    </button>
+                  </td>
+                  <td><span style="color: ${missedCount > 0 ? "var(--color-danger)" : "inherit"}; font-weight: 700;">${missedCount}</span></td>
+                  <td><span class="pill ${missRate > 20 ? "shortage" : ""}">${missRate}%</span></td>
+                  <td><div class="req-miss-chips-wrap">${reqMissChips}</div></td>
+                </tr>
+                ${isExpanded ? `
+                  <tr class="agent-drilldown-row">
+                    <td colspan="5">
+                      <div class="drilldown-container">
+                        <div class="drilldown-header">
+                          <strong>Affected Tickets for ${escapeHtml(agentName)} (${agentMissTickets.length})</strong>
+                          <span>Direct Zendesk Links &middot; Click ticket ID to inspect</span>
+                        </div>
+                        <div class="ticket-chips-grid">
+                          ${agentMissTickets.length ? agentMissTickets.map((t) => `
+                            <div class="ticket-chip-card">
+                              <div class="chip-top">
+                                <strong>${renderTicketLink(t.id)}</strong>
+                                <span class="chip-channel">${escapeHtml(t.channel || "Chat")}</span>
+                              </div>
+                              <div class="chip-misses">
+                                ${(t.misses || []).map((m) => `<span class="check no" style="font-size: 10px; margin: 1px 2px;">${escapeHtml(m)}</span>`).join("")}
+                              </div>
+                            </div>
+                          `).join("") : `<p class="muted" style="font-size: 12px; margin: 4px 0;">No individual ticket records available for historical compact period.</p>`}
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ` : ""}
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderAgentRequirementIntelligenceTable(agents, populationAgents) {
+  return renderAgentRequirementIntelligenceSection({ agents, population: { agents: populationAgents, hasData: true } });
+}
+
+function renderAgentAnalyticsTable(agents) {
+  return renderAgentRequirementIntelligenceSection({ agents, population: { agents: {}, hasData: false } });
+}
+
+function renderSystemicMissesSection(analytics) {
+  const pop = analytics.population;
+  const effectiveMisses = (pop && pop.hasData && pop.misses?.length) ? pop.misses : (analytics.misses || []);
+
+  if (!effectiveMisses.length) {
+    return `
+      <div class="analytics-card" style="margin-bottom: 18px;">
+        <header>
+          <strong>Primary Systemic Misses &amp; SOP Directives</strong>
+          <span>Requirement Issues &amp; Coaching Directives</span>
+        </header>
+        <p class="muted" style="padding: 16px;">No recurring requirement misses recorded for this period.</p>
+      </div>
+    `;
+  }
+
+  const missAdvice = {
+    "Default Subject": "Stop leaving ticket subjects as the default Conversation with title; rename them to the actual issue.",
+    "Generated Subject": "Stop leaving voice/email subjects as generated call, missed-call, form, or timestamp titles; rename them to Module - issue description.",
+    "Header Issue": "Stop using headers that do not follow the Module - issue description format.",
+    "Blank Module": "Stop submitting tickets without module/category selection.",
+    "Blank Feature": "Stop submitting tickets without the feature/category detail.",
+    "Missing Org": "Stop leaving organization blank when the customer account is identifiable.",
+    "Email No Hold": "For unresolved emails, stop leaving both resolution time and hold reason blank.",
+    "Suspicious Talk Time": "Review calls where talk time is far lower than total call duration.",
+    "Low CSAT": "Review low-satisfaction tickets for communication, ownership, and closure quality.",
+    "Missing Jira": "Attach JIRA defect/improvement link when escalating software bugs.",
+  };
+
+  const missAiInterpretations = {
+    "Header Issue": "Most frequent systemic requirement miss this period, primarily driven by non-standard title formatting.",
+    "Email No Hold": "Recurring pattern in unresolved emails where hold reasons or resolution times are omitted.",
+    "Blank Module": "Tickets submitted without proper module categorization during creation.",
+    "Blank Feature": "Tickets submitted without secondary feature detail logging.",
+    "Missing Org": "Customer accounts with identifiable organizations left unlinked.",
+    "Missing Jira": "Escalated software defect tickets without linked JIRA tracking links.",
+    "Default Subject": "Tickets submitted with automated default conversation titles.",
+    "Suspicious Talk Time": "Call duration significantly diverges from logged talk time.",
+    "Low CSAT": "Negative customer feedback requiring ownership and resolution review.",
+    "Generated Subject": "Automated subject lines not updated to actual user issues.",
+  };
+
+  return `
+    <div class="analytics-card" style="margin-bottom: 18px;">
+      <header>
+        <strong>Primary Systemic Misses &amp; SOP Directives</strong>
+        <span>Requirement Issues &amp; Coaching Directives</span>
+      </header>
+      <div class="systemic-miss-grid">
+        ${effectiveMisses.map((miss) => {
+          const isExpanded = expandedSystemicMiss === miss.name;
+          const missTickets = getMissTicketsForCategory(analytics, miss.name);
+          
+          const agentCounts = {};
+          for (const t of missTickets) {
+            agentCounts[t.agent] = (agentCounts[t.agent] || 0) + 1;
+          }
+          const contributors = Object.entries(agentCounts).sort((a, b) => b[1] - a[1]);
+
+          const aiText = missAiInterpretations[miss.name] || `Recurring requirement miss accounting for ${miss.count} affected tickets (${miss.rate}% miss rate).`;
+          const sopDirective = missAdvice[miss.name] || "Stop this pattern across daily ticket logging.";
+
+          return `
+            <article class="systemic-miss-card ${isExpanded ? "expanded" : ""}">
+              <div class="systemic-miss-head">
+                <div>
+                  <h4 class="systemic-miss-title">${escapeHtml(miss.name.toUpperCase())}</h4>
+                  <div class="systemic-miss-meta">
+                    <span class="systemic-count"><strong>${miss.count}</strong> affected tickets</span>
+                    <span class="systemic-rate-pill">${miss.rate}% miss rate</span>
+                  </div>
+                </div>
+                <button type="button" class="ops-action-inline small" data-toggle-systemic-miss="${escapeHtml(miss.name)}">
+                  ${isExpanded ? "Hide Contributors" : "View Contributors &rarr;"}
+                </button>
+              </div>
+
+              <div class="systemic-ai-box">
+                <strong>AI Insight:</strong> ${escapeHtml(aiText)}
+              </div>
+
+              <div class="systemic-sop-box">
+                <strong>Action:</strong> ${escapeHtml(sopDirective)}
+              </div>
+
+              ${isExpanded ? `
+                <div class="systemic-drilldown-panel">
+                  <div class="drilldown-subhead">
+                    <strong>Contributing Agents (${contributors.length}) &middot; Click ticket ID to open in Zendesk:</strong>
+                  </div>
+                  <div class="contributor-rows">
+                    ${contributors.length ? contributors.map(([agentName, count]) => {
+                      const agentSpecificTickets = missTickets.filter((t) => t.agent === agentName);
+                      return `
+                        <div class="contributor-row">
+                          <div class="contributor-agent-title">
+                            <strong>${escapeHtml(agentName)}</strong> &mdash; <span>${count} affected ticket${count === 1 ? "" : "s"}</span>
+                          </div>
+                          <div class="contributor-ticket-links">
+                            ${agentSpecificTickets.map((t) => renderTicketLink(t.id)).join(" ")}
+                          </div>
+                        </div>
+                      `;
+                    }).join("") : `<p class="muted" style="font-size: 12px; margin: 4px 0;">No individual ticket records available for historical compact period.</p>`}
+                  </div>
+                </div>
+              ` : ""}
+            </article>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderDualMissesTable(populationMisses, sampledMisses) {
+  return renderSystemicMissesSection({ misses: sampledMisses, population: { misses: populationMisses, hasData: true } });
+}
+
+function renderMissesTable(misses) {
+  return renderSystemicMissesSection({ misses, population: { misses: [], hasData: false } });
+}
+
+function renderDualChannelMissTable(populationChannels, sampledChannelMisses) {
+  return "";
+}
+
+function renderChannelMissTable(channelMisses) {
+  return "";
+}
+
+function renderHistoricalIntelligenceView() {
+  const allTickets = Object.values(samplerIntelligence);
+
+  const filtered = allTickets.filter((ticket) => {
+    if (intelSearchQuery) {
+      const q = intelSearchQuery.toLowerCase();
+      const matchId = clean(ticket.id).toLowerCase().includes(q);
+      const matchAgent = clean(ticket.agent).toLowerCase().includes(q);
+      const matchSubject = clean(ticket.subject).toLowerCase().includes(q);
+      const matchModule = clean(ticket.module).toLowerCase().includes(q);
+      if (!matchId && !matchAgent && !matchSubject && !matchModule) return false;
+    }
+    if (intelPeriodFilter !== "all") {
+      if (intelPeriodFilter.includes("-Q")) {
+        if (computeQaQuarterKey(ticket.date) !== intelPeriodFilter) return false;
+      } else if (intelPeriodFilter.includes("-W")) {
+        const [yStr, wStr] = intelPeriodFilter.split("-W");
+        const tWeek = computeQaWeekNumber(ticket.date);
+        let tYear = dateKeyToDate(ticket.date).getFullYear();
+        const anchor = getReportingYearAnchorKey(tYear);
+        if (ticket.date < anchor) tYear -= 1;
+        if (tWeek !== Number(wStr) || tYear !== Number(yStr)) return false;
+      } else if (intelPeriodFilter.includes("-")) {
+        if (computeQaMonthKey(ticket.date) !== intelPeriodFilter) return false;
+      }
+    }
+    if (intelAuditorFilter !== "all" && clean(ticket.auditor) !== intelAuditorFilter) return false;
+    if (intelAgentFilter !== "all" && clean(ticket.agent) !== intelAgentFilter) return false;
+    if (intelChannelFilter !== "all" && clean(ticket.channel) !== intelChannelFilter) return false;
+    if (intelCleanFilter !== "all") {
+      const isClean = getTicketMisses(ticket).length === 0;
+      if (intelCleanFilter === "clean" && !isClean) return false;
+      if (intelCleanFilter === "missed" && isClean) return false;
+    }
+    return true;
+  }).sort((a, b) => clean(b.date).localeCompare(clean(a.date)) || clean(b.id || b.ticketId).localeCompare(clean(a.id || a.ticketId)));
+
+  const total = allTickets.length;
+  const cleanCount = allTickets.filter((t) => getTicketMisses(t).length === 0).length;
+  const cleanPct = total ? Math.round((cleanCount / total) * 100) : 0;
+
+  const auditors = [...new Set(allTickets.map((t) => clean(t.auditor)).filter(Boolean))].sort();
+  const agents = [...new Set(allTickets.map((t) => clean(t.agent)).filter(Boolean))].sort();
+  const quarters = [...new Set(allTickets.map((t) => computeQaQuarterKey(t.date)).filter(Boolean))].sort().reverse();
+  const months = [...new Set(allTickets.map((t) => computeQaMonthKey(t.date)).filter(Boolean))].sort().reverse();
+
+  return `
+    <div class="intel-filter-bar">
+      <input id="intelSearchInput" class="ops-input" type="text" placeholder="Search ticket ID, agent, subject, module..." value="${escapeHtml(intelSearchQuery)}" />
+      <select id="intelPeriodSelect" class="ops-input">
+        <option value="all">All Periods</option>
+        <optgroup label="Quarters">
+          ${quarters.map((q) => `<option value="${q}" ${intelPeriodFilter === q ? "selected" : ""}>${getQuarterDetails(q).label}</option>`).join("")}
+        </optgroup>
+        <optgroup label="Months">
+          ${months.map((m) => `<option value="${m}" ${intelPeriodFilter === m ? "selected" : ""}>${formatMonthLabel(m)}</option>`).join("")}
+        </optgroup>
+      </select>
+      <select id="intelAuditorSelect" class="ops-input">
+        <option value="all">All Auditors</option>
+        ${auditors.map((a) => `<option value="${escapeHtml(a)}" ${intelAuditorFilter === a ? "selected" : ""}>${escapeHtml(a)}</option>`).join("")}
+      </select>
+      <select id="intelAgentSelect" class="ops-input">
+        <option value="all">All Agents</option>
+        ${agents.map((a) => `<option value="${escapeHtml(a)}" ${intelAgentFilter === a ? "selected" : ""}>${escapeHtml(a)}</option>`).join("")}
+      </select>
+      <select id="intelChannelSelect" class="ops-input">
+        <option value="all" ${intelChannelFilter === "all" ? "selected" : ""}>All Channels</option>
+        <option value="Chat" ${intelChannelFilter === "Chat" ? "selected" : ""}>Chat</option>
+        <option value="Voice" ${intelChannelFilter === "Voice" ? "selected" : ""}>Voice</option>
+        <option value="Email" ${intelChannelFilter === "Email" ? "selected" : ""}>Email</option>
+      </select>
+      <select id="intelCleanSelect" class="ops-input">
+        <option value="all" ${intelCleanFilter === "all" ? "selected" : ""}>All Results</option>
+        <option value="clean" ${intelCleanFilter === "clean" ? "selected" : ""}>Clean Only</option>
+        <option value="missed" ${intelCleanFilter === "missed" ? "selected" : ""}>Missed Only</option>
+      </select>
+      <span class="intel-stats">${filtered.length} of ${total} picks &middot; ${cleanPct}% Clean Overall</span>
+    </div>
+
+    <div class="modal-table-wrap" style="max-height: 520px;">
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Ticket ID</th>
+            <th>Agent</th>
+            <th>Channel</th>
+            <th>Module</th>
+            <th>Requirement Check</th>
+            <th>Auditor</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filtered.length ? filtered.map((ticket) => {
+            const misses = getTicketMisses(ticket);
+            return `
+              <tr>
+                <td>${escapeHtml(formatWorksheetDateLabel(ticket.date))}</td>
+                <td><strong>${renderTicketLink(ticket.id || ticket.ticketId)}</strong></td>
+                <td>${escapeHtml(ticket.agent)}</td>
+                <td>${escapeHtml(ticket.channel)}</td>
+                <td>${escapeHtml(ticket.module || "-")}</td>
+                <td class="checks">
+                  ${misses.length ? misses.map((m) => `<span class="check no">${escapeHtml(m)}</span>`).join(" ") : `<span class="check yes">Clean</span>`}
+                </td>
+                <td><span class="muted">${escapeHtml(ticket.auditor || "Unknown")}</span></td>
+              </tr>
+            `;
+          }).join("") : `<tr><td colspan="7" class="empty">No tickets match the selected filters.</td></tr>`}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function openAnalyticsHubModal(initialTab = "weekly") {
+  if (initialTab === "weekly" || initialTab === "monthly" || initialTab === "quarterly") {
+    activeAnalyticsTab = "performance";
+    activePerformancePeriod = initialTab === "weekly" ? "week" : initialTab === "monthly" ? "month" : "quarter";
+  } else if (initialTab === "performance" || initialTab === "ai" || initialTab === "intelligence") {
+    activeAnalyticsTab = initialTab;
+  } else {
+    activeAnalyticsTab = "performance";
+    activePerformancePeriod = "week";
+  }
+  const completed = getMostRecentCompletedReportingWeek();
+  if (!activeAnalyticsWeek) {
+    activeAnalyticsWeek = completed.weekNumber;
+    activeAnalyticsYear = completed.year;
+  }
+  openOpsModal(
+    "Sampler Analytics & AI Hub",
+    "Comprehensive agent requirement intelligence, systemic SOP directives, and AI management briefings.",
+    renderAnalyticsHubPanel(),
+    "analytics-modal",
+  );
+}
+
+function refreshAnalyticsHubPanel() {
+  const container = document.querySelector(".ops-panel-body");
+  if (container) {
+    container.innerHTML = renderAnalyticsHubPanel();
+  }
+}
+
+function renderAnalyticsHubPanel() {
+  return `
+    <nav class="analytics-nav ios-nav-segmented">
+      <button class="analytics-tab-btn ${activeAnalyticsTab === "performance" ? "active" : ""}" type="button" data-analytics-tab="performance">Performance Analytics</button>
+      <button class="analytics-tab-btn ${activeAnalyticsTab === "ai" ? "active" : ""}" type="button" data-analytics-tab="ai">AI Management Summary</button>
+      <button class="analytics-tab-btn ${activeAnalyticsTab === "intelligence" ? "active" : ""}" type="button" data-analytics-tab="intelligence">Audited Intelligence</button>
+    </nav>
+    <div class="analytics-container">
+      ${activeAnalyticsTab === "performance" ? renderPerformanceAnalyticsView() : ""}
+      ${activeAnalyticsTab === "ai" ? renderAiSummaryTabView() : ""}
+      ${activeAnalyticsTab === "intelligence" ? renderHistoricalIntelligenceView() : ""}
+    </div>
+    ${renderTicketPopoverCard()}
+  `;
+}
+
+function renderPerformanceAnalyticsView() {
+  return `
+    <div class="performance-period-segmented-wrap">
+      <div class="ios-segmented-control" role="group" aria-label="Performance Period">
+        <button class="ios-segment-btn ${activePerformancePeriod === "week" ? "active" : ""}" type="button" data-perf-period="week">Weekly View</button>
+        <button class="ios-segment-btn ${activePerformancePeriod === "month" ? "active" : ""}" type="button" data-perf-period="month">Monthly View</button>
+        <button class="ios-segment-btn ${activePerformancePeriod === "quarter" ? "active" : ""}" type="button" data-perf-period="quarter">Quarterly View</button>
+      </div>
+    </div>
+    <div class="performance-view-body">
+      ${activePerformancePeriod === "week" ? renderWeeklyAnalyticsView() : ""}
+      ${activePerformancePeriod === "month" ? renderMonthlyAnalyticsView() : ""}
+      ${activePerformancePeriod === "quarter" ? renderQuarterlyAnalyticsView() : ""}
+    </div>
+  `;
+}
+
+function openHistoricalIntelligenceModal() {
+  openAnalyticsHubModal("intelligence");
+}
+
+function renderWeeklyAnalyticsView() {
+  const analytics = buildWeeklyAnalytics(activeAnalyticsYear, activeAnalyticsWeek);
+
+  return `
+    <div class="analytics-period-bar">
+      <div class="analytics-period-info">
+        <strong>${escapeHtml(analytics.label)}</strong>
+        <span>Saturday &rarr; Friday Reporting Week</span>
+      </div>
+      <div class="analytics-period-selector">
+        <button class="primary-action" type="button" data-period-action="prev-week" style="min-width: 36px; padding: 6px 12px;">&larr;</button>
+        <select id="analyticsWeekSelect" class="ops-input" style="width: auto; min-width: 140px;">
+          ${Array.from({ length: 52 }, (_, i) => i + 1).map((w) => `
+            <option value="${w}" ${w === activeAnalyticsWeek ? "selected" : ""}>Week ${w}</option>
+          `).join("")}
+        </select>
+        <select id="analyticsYearSelect" class="ops-input" style="width: auto; min-width: 100px;">
+          <option value="2026" ${activeAnalyticsYear === 2026 ? "selected" : ""}>2026</option>
+          <option value="2027" ${activeAnalyticsYear === 2027 ? "selected" : ""}>2027</option>
+        </select>
+        <button class="primary-action" type="button" data-period-action="next-week" style="min-width: 36px; padding: 6px 12px;">&rarr;</button>
+      </div>
+    </div>
+
+    ${renderPerformerCards(analytics)}
+
+    ${renderAgentRequirementIntelligenceSection(analytics)}
+
+    ${renderSystemicMissesSection(analytics)}
+
+    ${renderDualKpiGrid(analytics)}
+
+    <div class="analytics-card" style="margin-bottom: 16px;">
+      <header>
+        <strong>Support Channel Distribution</strong>
+        <span>${analytics.totalSampled} sampled picks</span>
+      </header>
+      <div class="analytics-card-body">
+        ${renderChannelProgress(analytics.channels, analytics.totalSampled)}
+      </div>
+    </div>
+  `;
+}
+
+function renderMonthlyAnalyticsView() {
+  const analytics = buildMonthlyAnalytics(activeAnalyticsMonth);
+  const months = [...new Set(Object.values(samplerIntelligence).map((t) => computeQaMonthKey(t.date)).concat([activeAnalyticsMonth]))].sort().reverse();
+
+  return `
+    <div class="analytics-period-bar">
+      <div class="analytics-period-info">
+        <strong>${escapeHtml(analytics.label)}</strong>
+        <span>${escapeHtml(analytics.window)}</span>
+      </div>
+      <div class="analytics-period-selector">
+        <button class="primary-action" type="button" data-period-action="prev-month" style="min-width: 36px; padding: 6px 12px;">&larr;</button>
+        <select id="analyticsMonthSelect" class="ops-input" style="width: auto; min-width: 160px;">
+          ${months.map((m) => `
+            <option value="${m}" ${m === activeAnalyticsMonth ? "selected" : ""}>${formatMonthLabel(m)}</option>
+          `).join("")}
+        </select>
+        <button class="primary-action" type="button" data-period-action="next-month" style="min-width: 36px; padding: 6px 12px;">&rarr;</button>
+      </div>
+    </div>
+
+    ${renderPerformerCards(analytics)}
+
+    ${renderAgentRequirementIntelligenceSection(analytics)}
+
+    ${renderSystemicMissesSection(analytics)}
+
+    ${renderDualKpiGrid(analytics)}
+
+    <div class="analytics-card" style="margin-bottom: 16px;">
+      <header>
+        <strong>Monthly Channel Distribution</strong>
+        <span>${analytics.totalSampled} sampled picks</span>
+      </header>
+      <div class="analytics-card-body">
+        ${renderChannelProgress(analytics.channels, analytics.totalSampled)}
+      </div>
+    </div>
+  `;
+}
+
+function renderQuarterlyAnalyticsView() {
+  const analytics = buildQuarterlyAnalytics(activeAnalyticsQuarter);
+  const quarters = ["2026-Q1", "2026-Q2", "2026-Q3", "2026-Q4", "2027-Q1"];
+
+  return `
+    <div class="analytics-period-bar">
+      <div class="analytics-period-info">
+        <strong>${escapeHtml(analytics.label)}</strong>
+        <span>Quarterly Performance Rollup</span>
+      </div>
+      <div class="analytics-period-selector">
+        <button class="primary-action" type="button" data-period-action="prev-quarter" style="min-width: 36px; padding: 6px 12px;">&larr;</button>
+        <select id="analyticsQuarterSelect" class="ops-input" style="width: auto; min-width: 160px;">
+          ${quarters.map((q) => `
+            <option value="${q}" ${q === activeAnalyticsQuarter ? "selected" : ""}>${getQuarterDetails(q).label}</option>
+          `).join("")}
+        </select>
+        <button class="primary-action" type="button" data-period-action="next-quarter" style="min-width: 36px; padding: 6px 12px;">&rarr;</button>
+      </div>
+    </div>
+
+    ${renderPerformerCards(analytics)}
+
+    ${renderAgentRequirementIntelligenceSection(analytics)}
+
+    ${renderSystemicMissesSection(analytics)}
+
+    ${renderDualKpiGrid(analytics)}
+
+    <div class="analytics-card" style="margin-bottom: 16px;">
+      <header>
+        <strong>Weekly Velocity &amp; Quality Trend in Quarter</strong>
+        <span>Week-by-Week Breakdown</span>
+      </header>
+      <div class="modal-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Reporting Week</th>
+              <th>Sampled Picks</th>
+              <th>Clean Picks</th>
+              <th>Clean Rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${analytics.weeklyTrend.map((w) => `
+              <tr>
+                <td><strong>Week ${w.weekNumber}</strong></td>
+                <td>${w.total}</td>
+                <td>${w.cleanCount}</td>
+                <td>
+                  ${w.cleanRate !== null ? `
+                    <span class="pill ${w.cleanRate < 75 ? "shortage" : ""}">
+                      ${w.cleanRate}%
+                    </span>
+                  ` : `<span class="muted">No samples</span>`}
+                </td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="analytics-card" style="margin-bottom: 16px;">
+      <header>
+        <strong>Quarterly Channel Distribution</strong>
+        <span>${analytics.totalSampled} sampled picks</span>
+      </header>
+      <div class="analytics-card-body">
+        ${renderChannelProgress(analytics.channels, analytics.totalSampled)}
+      </div>
+    </div>
+  `;
+}
+
+
+function handleAiPeriodStep(direction) {
+  const step = direction === "prev" ? -1 : 1;
+  if (activeAiSummaryPeriodType === "day") {
+    const cur = activeAiSummaryDate || todayDateKey();
+    const d = dateKeyToDate(cur);
+    do {
+      d.setDate(d.getDate() + step);
+    } while (d.getDay() === 0 || d.getDay() === 6);
+    activeAiSummaryDate = dateToKey(d);
+  } else if (activeAiSummaryPeriodType === "week") {
+    if (direction === "prev") {
+      if (activeAnalyticsWeek > 1) {
+        activeAnalyticsWeek--;
+      } else {
+        activeAnalyticsWeek = 52;
+        activeAnalyticsYear--;
+      }
+    } else {
+      if (activeAnalyticsWeek < 52) {
+        activeAnalyticsWeek++;
+      } else {
+        activeAnalyticsWeek = 1;
+        activeAnalyticsYear++;
+      }
+    }
+  } else if (activeAiSummaryPeriodType === "month") {
+    activeAnalyticsMonth = shiftMonthKey(activeAnalyticsMonth, step);
+  } else if (activeAiSummaryPeriodType === "quarter") {
+    if (direction === "prev") {
+      activeAnalyticsQuarter = getPriorQuarterKey(activeAnalyticsQuarter);
+    } else {
+      const [y, q] = activeAnalyticsQuarter.split("-");
+      const numY = Number(y);
+      if (q === "Q1") activeAnalyticsQuarter = `${numY}-Q2`;
+      else if (q === "Q2") activeAnalyticsQuarter = `${numY}-Q3`;
+      else if (q === "Q3") activeAnalyticsQuarter = `${numY}-Q4`;
+      else activeAnalyticsQuarter = `${numY + 1}-Q1`;
+    }
+  }
+}
+
+function migrateLegacyStorageIdentities() {
+  const nextIntel = {};
+  for (const [k, v] of Object.entries(samplerIntelligence)) {
+    const channel = v.channel || v.sheet || "Chat";
+    const tid = String(v.id || v.ticketId || k);
+    const compKey = k.includes("::") ? k : `${channel}::${tid}`;
+    nextIntel[compKey] = { ...v, id: tid, ticketId: tid, channel };
+  }
+  samplerIntelligence = nextIntel;
+  safeStorageSetItem(SAMPLER_INTELLIGENCE_KEY, JSON.stringify(samplerIntelligence));
+
+  const nextCopied = new Set();
+  for (const key of copiedTickets) {
+    if (key.includes("::")) {
+      nextCopied.add(key);
+    } else {
+      const existing = Object.values(samplerIntelligence).find((t) => String(t.id || t.ticketId) === String(key));
+      if (existing && existing.channel) {
+        nextCopied.add(`${existing.channel}::${key}`);
+      }
+    }
+  }
+  copiedTickets = nextCopied;
+  safeStorageSetItem("copiedTickets", JSON.stringify([...copiedTickets]));
+}
+
+function renderAiSummaryTabView() {
+  let analytics;
+  let periodLabel = "";
+
+  if (activeAiSummaryPeriodType === "day") {
+    analytics = buildDailyAnalytics(activeAiSummaryDate);
+    periodLabel = formatWorksheetDateLabel(activeAiSummaryDate);
+  } else if (activeAiSummaryPeriodType === "week") {
+    analytics = buildWeeklyAnalytics(activeAnalyticsYear, activeAnalyticsWeek);
+    periodLabel = analytics.label;
+  } else if (activeAiSummaryPeriodType === "month") {
+    analytics = buildMonthlyAnalytics(activeAnalyticsMonth);
+    periodLabel = formatMonthLabel(activeAnalyticsMonth);
+  } else {
+    analytics = buildQuarterlyAnalytics(activeAnalyticsQuarter);
+    periodLabel = getQuarterDetails(activeAnalyticsQuarter).label;
+  }
+
+  return `
+    <div class="analytics-period-bar" style="margin-bottom: 18px;">
+      <div class="compact-period-nav">
+        <select id="aiSummaryPeriodTypeSelect" class="period-type-select">
+          <option value="day" ${activeAiSummaryPeriodType === "day" ? "selected" : ""}>Day</option>
+          <option value="week" ${activeAiSummaryPeriodType === "week" ? "selected" : ""}>Week</option>
+          <option value="month" ${activeAiSummaryPeriodType === "month" ? "selected" : ""}>Month</option>
+          <option value="quarter" ${activeAiSummaryPeriodType === "quarter" ? "selected" : ""}>Quarter</option>
+        </select>
+        <div class="period-stepper">
+          <button class="period-stepper-btn" type="button" data-ai-period-action="prev">&larr;</button>
+          <span class="period-stepper-label">${escapeHtml(periodLabel)}</span>
+          <button class="period-stepper-btn" type="button" data-ai-period-action="next">&rarr;</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      ${generateAiManagementSummary(analytics)}
+    </div>
+  `;
+}
+
+function renderTicketPopoverCard() {
+  if (!activeTicketPopover) return "";
+  const { title, subtitle, tickets } = activeTicketPopover;
+
+  return `
+    <div class="ticket-popover-overlay" data-close-popover-backdrop>
+      <div class="ticket-popover-card" onclick="event.stopPropagation()">
+        <div class="ticket-popover-head">
+          <div class="ticket-popover-title-wrap">
+            <strong>${escapeHtml(title)}</strong>
+            <span>${escapeHtml(subtitle)}</span>
+          </div>
+          <button type="button" class="ticket-popover-close" data-close-popover aria-label="Close">&times;</button>
+        </div>
+        <div class="ticket-popover-body">
+          <div class="ticket-popover-chips">
+            ${tickets.length ? tickets.map((t) => `
+              <span class="compact-ticket-badge">
+                ${renderTicketLink(t.id || t.ticketId)}
+              </span>
+            `).join("") : `<p class="muted" style="font-size: 12px; margin: 4px 0;">No individual tickets available for this selection.</p>`}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function openHighImpactModal(agentName) {
+  let analytics;
+  if (activePerformancePeriod === "week") analytics = buildWeeklyAnalytics(activeAnalyticsYear, activeAnalyticsWeek);
+  else if (activePerformancePeriod === "month") analytics = buildMonthlyAnalytics(activeAnalyticsMonth);
+  else analytics = buildQuarterlyAnalytics(activeAnalyticsQuarter);
+
+  const tickets = getAgentHighImpactTickets(analytics, agentName);
+
+  activeTicketPopover = {
+    title: `High-Impact Tickets &mdash; ${agentName}`,
+    subtitle: `${tickets.length} qualifying tickets (&gt;2 requirement misses or major miss)`,
+    tickets: tickets,
+  };
+  refreshAnalyticsHubPanel();
+}
+
+function openAgentReqPopover(agentName, missName) {
+  let analytics;
+  if (activePerformancePeriod === "week") analytics = buildWeeklyAnalytics(activeAnalyticsYear, activeAnalyticsWeek);
+  else if (activePerformancePeriod === "month") analytics = buildMonthlyAnalytics(activeAnalyticsMonth);
+  else analytics = buildQuarterlyAnalytics(activeAnalyticsQuarter);
+
+  const allMissTickets = getMissTicketsForCategory(analytics, missName);
+  const agentTickets = allMissTickets.filter((t) => t.agent === agentName);
+
+  activeTicketPopover = {
+    title: missName,
+    subtitle: `${agentTickets.length} affected ticket${agentTickets.length === 1 ? "" : "s"} &middot; ${agentName}`,
+    tickets: agentTickets,
+  };
+  refreshAnalyticsHubPanel();
+}
+
+function executeResetCurrentWorkbook() {
+  triggerHapticPulse();
+  syncDailySessionResetToServer();
+  const currentDateKey = normalizeDateKey(currentPayload?.metadata?.samplingDate) || computeDefaultSamplingDate(todayDateKey());
+
+  currentPayload = null;
+  allTickets = [];
+  viewingHistorical = false;
+  activeWorksheetId = null;
+  rejectedTickets.clear();
+  rejectedPatternCounts = {};
+
+  if (currentDateKey) {
+    if (workbookRequirementIntelligence[currentDateKey]) {
+      delete workbookRequirementIntelligence[currentDateKey];
+      safeStorageSetItem(WORKBOOK_REQUIREMENT_INTELLIGENCE_KEY, JSON.stringify(workbookRequirementIntelligence));
+    }
+    if (samplerDailyManifests[currentDateKey]) {
+      delete samplerDailyManifests[currentDateKey];
+      safeStorageSetItem(SAMPLER_DAILY_MANIFEST_KEY, JSON.stringify(samplerDailyManifests));
+    }
+    for (const [k, pick] of Object.entries(samplerIntelligence)) {
+      if (normalizeDateKey(pick.date) === currentDateKey) {
+        delete samplerIntelligence[k];
+        copiedTickets.delete(k);
+        copiedTickets.delete(pick.id || pick.ticketId);
+      }
+    }
+    safeStorageSetItem(SAMPLER_INTELLIGENCE_KEY, JSON.stringify(samplerIntelligence));
+    safeStorageSetItem("copiedTickets", JSON.stringify([...copiedTickets]));
+  }
+
+  safeStorageSetItem("rejectedTicketsV1", JSON.stringify([]));
+  safeStorageSetItem("rejectedPatternCountsV1", JSON.stringify({}));
+
+  closeOpsModal();
+  renderTodayCard();
+  statusEl.textContent = "Waiting for a daily sampling workbook.";
+  controlsEl.hidden = true;
+  auditorTabsEl.hidden = true;
+  summaryEl.innerHTML = "";
+  metricsEl.innerHTML = "";
+  resultsEl.innerHTML = "";
+}
+
+function executeFlushLocalN1Data() {
+  triggerHapticPulse();
+  for (const k of Object.keys(workbookRequirementIntelligence)) {
+    delete workbookRequirementIntelligence[k];
+  }
+  for (const k of Object.keys(samplerDailyManifests)) {
+    delete samplerDailyManifests[k];
+  }
+  for (const k of Object.keys(samplerHistoricalSummaries)) {
+    delete samplerHistoricalSummaries[k];
+  }
+
+  safeStorageSetItem(WORKBOOK_REQUIREMENT_INTELLIGENCE_KEY, JSON.stringify({}));
+  safeStorageSetItem(SAMPLER_DAILY_MANIFEST_KEY, JSON.stringify({}));
+  safeStorageSetItem(SAMPLER_HISTORICAL_SUMMARIES_KEY, JSON.stringify({}));
+
+  closeOpsModal();
+  renderTodayCard();
+  if (typeof renderWorksheetLibraryModal === "function") {
+    refreshWorksheetLibraryModal();
+  }
+}
+
+function openResetWorkbookConfirmModal() {
+  const currentName = currentPayload?.metadata?.label || currentPayload?.metadata?.filename || "Active Session";
+  const currentDate = formatWorksheetDateLabel(normalizeDateKey(currentPayload?.metadata?.samplingDate) || computeDefaultSamplingDate(todayDateKey()));
+
+  openOpsModal(
+    "Reset Current Workbook?",
+    "Remove current workbook data and locally stored N-1 records.",
+    `
+      <div style="padding: 6px 0;">
+        <p style="margin: 0 0 12px; font-size: 14px; color: var(--text-primary);">
+          <strong>Current workbook:</strong> ${escapeHtml(currentName)} (${escapeHtml(currentDate)})
+        </p>
+        <div style="background: var(--color-surface-secondary); border: 1px solid var(--separator-subtle); border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 16px;">
+          <p style="margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-primary);">This will remove:</p>
+          <ul style="margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.6;">
+            <li>Current workbook session data &amp; in-memory tickets</li>
+            <li>Locally stored N-1 requirement intelligence for this date (${escapeHtml(currentDate)})</li>
+            <li>Current session sampling state &amp; copied picks for this date</li>
+          </ul>
+        </div>
+        <p class="muted" style="margin: 0 0 16px; font-size: 12.5px;">
+          ℹ️ Historical worksheets, agent configurations, and other dates will remain untouched. This action cannot be undone.
+        </p>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button type="button" class="secondary-btn" data-close-ops>Cancel</button>
+          <button type="button" class="danger-btn" id="confirmResetWorkbookBtn" data-confirm-reset-workbook>Reset Current Workbook</button>
+        </div>
+      </div>
+    `,
+    "reset-confirm-modal"
+  );
+}
+
+function openFlushN1ConfirmModal() {
+  openOpsModal(
+    "Flush Local N-1 Data?",
+    "Permanently remove locally stored N-1 data from this browser.",
+    `
+      <div style="padding: 6px 0;">
+        <div style="background: var(--color-surface-secondary); border: 1px solid var(--separator-subtle); border-radius: var(--radius-md); padding: 12px 16px; margin-bottom: 16px;">
+          <p style="margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--color-danger);">Warning:</p>
+          <ul style="margin: 0; padding-left: 18px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.6;">
+            <li>All locally stored N-1 requirement intelligence will be removed</li>
+            <li>All historical daily manifests will be cleared</li>
+            <li>Agent assignments and application configuration will be preserved</li>
+          </ul>
+        </div>
+        <p class="muted" style="margin: 0 0 16px; font-size: 12.5px;">
+          This will free local storage quota. This action cannot be undone.
+        </p>
+        <div style="display: flex; justify-content: flex-end; gap: 10px;">
+          <button type="button" class="secondary-btn" data-close-ops>Cancel</button>
+          <button type="button" class="danger-btn" id="confirmFlushN1Btn" data-confirm-flush-n1>Flush Local N-1 Data</button>
+        </div>
+      </div>
+    `,
+    "flush-confirm-modal"
+  );
 }
 
 function render() {
@@ -3058,12 +6502,18 @@ const CHANNEL_SUMMARY_HEADINGS = { Chat: "Chat", Voice: "Calls", Email: "Email" 
 function renderSummary(sheets) {
   // Per-auditor, so it updates the moment you switch the auditor tab.
   const activeTickets = getActiveAgents().flatMap((agent) => agent.tickets);
-  summaryEl.innerHTML = sheets
-    .map((sheet) => {
+  const channels = [];
+  for (const sheet of sheets) {
+    if (!channels.includes(sheet.channel)) {
+      channels.push(sheet.channel);
+    }
+  }
+  summaryEl.innerHTML = channels
+    .map((channel) => {
       // Max possible samples for this channel today: deduped tickets for a
       // target agent, minus merged/child tickets (nothing to audit there).
-      const available = activeTickets.filter((ticket) => ticket.sheet === sheet.sheet && !ticket.isMergedChild).length;
-      const heading = CHANNEL_SUMMARY_HEADINGS[sheet.channel] || sheet.channel;
+      const available = activeTickets.filter((ticket) => ticket.channel === channel && !ticket.isMergedChild).length;
+      const heading = CHANNEL_SUMMARY_HEADINGS[channel] || channel;
       return `
         <article class="metric">
           <strong>${escapeHtml(heading)}</strong>
@@ -3155,46 +6605,85 @@ function getMetricLabel(metricKey) {
   return labels[metricKey] || "Tickets";
 }
 
+
+function renderMetricTicketRows(tickets) {
+  if (!tickets.length) {
+    return `
+      <div class="ios-empty-state">
+        <span class="ios-empty-icon">&#128203;</span>
+        <strong>No Tickets Found</strong>
+        <span>There are no tickets matching this metric under the active filters.</span>
+      </div>
+    `;
+  }
+
+  return tickets.map((ticket) => {
+    const channelLower = (ticket.channel || "chat").toLowerCase();
+    const searchable = `${ticket.ticketId || ticket.id || ""} ${ticket.agent || ""} ${ticket.channel || ""} ${ticket.subject || ""}`.toLowerCase();
+    return `
+      <div class="ios-ticket-row" data-ticket-searchable="${escapeHtml(searchable)}">
+        <div class="ios-ticket-row-left">
+          <div class="ios-ticket-id-wrap">
+            ${renderTicketLink(ticket.ticketId || ticket.id)}
+          </div>
+          <div class="ios-ticket-details">
+            <strong class="ios-ticket-agent">${escapeHtml(ticket.agent || "Unknown Agent")}</strong>
+            <span class="ios-ticket-meta">
+              ${escapeHtml(ticket.date || "-")} &middot; ${escapeHtml(ticket.subject || "No subject specified")}
+            </span>
+          </div>
+        </div>
+        <div class="ios-ticket-row-right">
+          <span class="ios-channel-badge ${channelLower}">
+            ${escapeHtml(ticket.channel || "Chat")}
+          </span>
+          ${ticket.score !== undefined ? `<span class="ios-score-badge">Score ${ticket.score}</span>` : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
 function openMetricModal(metricKey) {
   const tickets = getMetricTickets(metricKey);
   closeMetricModal();
+  closeTagsModal();
+
+  const label = getMetricLabel(metricKey);
+  const toneClass = metricKey === "badCsat" || metricKey === "headerIssues" ? "tone-danger" : metricKey === "missingJira" ? "tone-warning" : "tone-primary";
+
   const modal = document.createElement("div");
   modal.className = "modal-backdrop";
   modal.dataset.metricModal = "true";
   modal.innerHTML = `
-    <section class="metric-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(getMetricLabel(metricKey))}">
-      <header>
-        <div>
-          <strong>${escapeHtml(getMetricLabel(metricKey))}</strong>
-          <span>${tickets.length} tickets | ${escapeHtml(activeAuditor)} | ${escapeHtml(currentChannel)}</span>
+    <section class="metric-modal ios-modal-card" role="dialog" aria-modal="true" aria-label="${escapeHtml(label)}">
+      <header class="ios-modal-header">
+        <div class="ios-modal-title-group">
+          <div class="ios-modal-badge ${toneClass}">
+            <span class="ios-modal-metric-count">${tickets.length}</span>
+          </div>
+          <div>
+            <strong class="ios-modal-title">${escapeHtml(label)}</strong>
+            <span class="ios-modal-subtitle">
+              ${tickets.length} ticket${tickets.length === 1 ? "" : "s"} &middot; ${escapeHtml(activeAuditor === "All" ? "All Agents" : activeAuditor)} &middot; ${escapeHtml(currentChannel)}
+            </span>
+          </div>
         </div>
-        <button type="button" data-close-modal>&times;</button>
+        <div class="ios-modal-actions">
+          ${tickets.length ? `<button type="button" class="ios-pill-btn" data-copy-metric-tickets="${metricKey}">Copy IDs (${tickets.length})</button>` : ""}
+          <button type="button" class="ios-close-btn" data-close-modal aria-label="Close">&times;</button>
+        </div>
       </header>
-      <div class="modal-table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Ticket ID</th>
-              <th>Agent Name</th>
-              <th>Support Channel</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${
-              tickets.length
-                ? tickets.map((ticket) => `
-                  <tr>
-                    <td>${escapeHtml(ticket.date || "-")}</td>
-                    <td>${renderTicketLink(ticket.ticketId)}</td>
-                    <td>${escapeHtml(ticket.agent || "-")}</td>
-                    <td>${escapeHtml(ticket.channel || "-")}</td>
-                  </tr>
-                `).join("")
-                : `<tr><td colspan="4" class="empty">No tickets under this metric for the current auditor/filter.</td></tr>`
-            }
-          </tbody>
-        </table>
+
+      <div class="ios-modal-search-bar">
+        <span class="ios-search-icon">&#128269;</span>
+        <input type="text" class="ios-search-input" id="metricModalSearchInput" placeholder="Filter by Ticket ID, Agent Name, Channel, or Subject..." />
+      </div>
+
+      <div class="ios-modal-content-wrap">
+        <div class="ios-ticket-list" id="metricModalTicketList">
+          ${renderMetricTicketRows(tickets)}
+        </div>
       </div>
     </section>
   `;
@@ -3247,6 +6736,9 @@ function closeTagsModal() {
 // currentPayload/ticketHistory directly) so inactive agents stay visible
 // there, per the historical-accuracy requirement.
 function getActiveAgents() {
+  if (!activeAuditor || activeAuditor === "All") {
+    return (currentPayload?.agents || []).filter((agent) => isAgentActive(agent.agent));
+  }
   return (currentPayload?.agents || []).filter((agent) => agent.auditor === activeAuditor && isAgentActive(agent.agent));
 }
 
@@ -3331,13 +6823,13 @@ function getDisplayTickets(agent) {
 function renderAgentMonthlyPanel(agentName) {
   const summaries = buildMonthlySummary(agentName);
   if (!summaries.length) {
-    return `<section class="agent-history"><p>No stored N-1 history for this agent yet. Upload daily files to build the monthly view.</p></section>`;
+    return `<section class="agent-history"><p>No persistent Sampler Intelligence for this agent yet. Copied picks build the monthly trend.</p></section>`;
   }
   return `
     <section class="agent-history">
       <div class="history-head">
         <strong>Monthly trend for ${escapeHtml(agentName)}</strong>
-        <span>${summaries.reduce((sum, month) => sum + month.total, 0)} stored tickets</span>
+        <span>${summaries.reduce((sum, month) => sum + month.total, 0)} sampled picks</span>
       </div>
       ${summaries.map(renderMonthSummary).join("")}
     </section>
@@ -3354,7 +6846,7 @@ function renderMonthSummary(month) {
   const examples = month.tickets
     .filter((ticket) => getTicketMisses(ticket).length > 0)
     .slice(0, 5)
-    .map((ticket) => `<span class="history-ticket">${escapeHtml(ticket.date)} | ${renderTicketLink(ticket.ticketId)} | ${escapeHtml(getTicketMisses(ticket).join(", "))}</span>`)
+    .map((ticket) => `<span class="history-ticket">${escapeHtml(ticket.date)} | ${renderTicketLink(ticket.id || ticket.ticketId)} | ${escapeHtml(getTicketMisses(ticket).join(", "))}</span>`)
     .join("");
   return `
     <details class="month-summary" open>
@@ -3397,16 +6889,21 @@ function renderMissRow(miss) {
 }
 
 function renderPick(pick) {
-  const duplicate = copiedTickets.has(String(pick.ticketId));
+  const duplicate = hasCopiedTicket(pick.channel, pick.ticketId);
   const rejected = rejectedTickets.has(String(pick.ticketId));
   const copyText = copyRow(pick);
+
+  const copyIcon = `<svg class="app-icon icon-copy" viewBox="0 0 24 24" fill="none"><rect width="13" height="13" x="8" y="8" rx="2" ry="2" stroke="currentColor" stroke-width="1.8"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+  const crossIcon = `<svg class="app-icon icon-crossout" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="m5 5 14 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+  const tagIcon = `<svg class="app-icon icon-tag" viewBox="0 0 24 24" fill="none"><path d="m20.59 13.41-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82zM7 7h.01" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
   return `
     <tr class="${duplicate ? "duplicate" : ""} ${rejected ? "rejected" : ""} ${pick.isMergedChild ? "merged-child" : ""}">
       <td class="rank">${pick.rank}<span>${escapeHtml(pick.recommendation)}</span></td>
       <td>${escapeHtml(pick.date || "-")}</td>
       <td>
         ${renderTicketLink(pick.ticketId)}
-        <button class="tags-btn" type="button" data-tags-ticket="${escapeHtml(pick.ticketId || "")}" data-tags-channel="${escapeHtml(pick.channel || "")}">Tags</button>
+        <button class="tags-btn" type="button" data-tags-ticket="${escapeHtml(pick.ticketId || "")}" data-tags-channel="${escapeHtml(pick.channel || "")}">${tagIcon} <span>Tags</span></button>
         ${duplicate ? `<span class="dupe">Already copied</span>` : ""}
         ${rejected ? `<span class="dupe rejected-label">Crossed out</span>` : ""}
         ${pick.isMergedChild ? `<span class="dupe merged-label">Merged ticket - not auditable</span>` : ""}
@@ -3415,8 +6912,8 @@ function renderPick(pick) {
       <td>${escapeHtml(pick.channel || "-")}</td>
       <td class="checks">${renderRequirementChecks(buildRequirementDisplay(pick))}</td>
       <td class="row-actions">
-        <button class="copy-btn" data-ticket-id="${escapeHtml(pick.ticketId || "")}" data-copy="${escapeHtml(copyText)}">Copy</button>
-        <button class="reject-btn" data-ticket-id="${escapeHtml(pick.ticketId || "")}" type="button">${rejected ? "Undo" : "Cross out"}</button>
+        <button class="copy-btn" data-ticket-id="${escapeHtml(pick.ticketId || "")}" data-channel="${escapeHtml(pick.channel || "")}" data-copy="${escapeHtml(copyText)}">${copyIcon} <span>Copy</span></button>
+        <button class="reject-btn" data-ticket-id="${escapeHtml(pick.ticketId || "")}" data-channel="${escapeHtml(pick.channel || "")}" type="button">${crossIcon} <span>${rejected ? "Undo" : "Cross out"}</span></button>
       </td>
     </tr>
   `;
@@ -3496,13 +6993,15 @@ function buildRequirementDisplay(ticket) {
 }
 
 function renderRequirementChecks(items) {
-  if (!items.length) return `<span class="check neutral">No flagged issue</span>`;
+  if (!items.length) return `<span class="check neutral"><svg class="app-icon icon-check" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg> No flagged issue</span>`;
   return items
     .map((item) => {
       const cls = item.tone === "good" ? "check yes" : "check no";
-      const symbol = item.tone === "good" ? "&#10003;" : "&#10007;";
+      const icon = item.tone === "good"
+        ? `<svg class="app-icon icon-check" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`
+        : `<svg class="app-icon icon-fail" viewBox="0 0 24 24" fill="none"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
       const title = item.hint ? ` title="${escapeHtml(item.hint)}"` : "";
-      return `<span class="${cls}"${title}>${symbol} ${escapeHtml(item.label)}</span>`;
+      return `<span class="${cls}"${title}>${icon} ${escapeHtml(item.label)}</span>`;
     })
     .join("");
 }
@@ -3510,7 +7009,7 @@ function renderRequirementChecks(items) {
 function renderChecks(checks) {
   return checks
     .filter((check) => check.active)
-    .map((check) => `<span class="check yes">&#10003; ${escapeHtml(check.label)}</span>`)
+    .map((check) => `<span class="check yes"><svg class="app-icon icon-check" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg> ${escapeHtml(check.label)}</span>`)
     .join("") || `<span class="check neutral">No flagged issue</span>`;
 }
 
@@ -3539,7 +7038,7 @@ function renderWatchIndicator(ticketId) {
 }
 
 const WATCH_ICON_SVG =
-  '<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M6 7a3 3 0 0 0-3 3v5a3 3 0 0 0 3 3h.5a3 3 0 0 0 3-3v-2h5v2a3 3 0 0 0 3 3h.5a3 3 0 0 0 3-3v-5a3 3 0 0 0-3-3h-.5a3 3 0 0 0-3 3v1h-5v-1a3 3 0 0 0-3-3H6Z"/></svg>';
+  '<svg class="app-icon icon-eye" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.8"/></svg>';
 
 function filterTickets(tickets) {
   if (currentChannel === "All") return tickets || [];
@@ -3547,6 +7046,8 @@ function filterTickets(tickets) {
 }
 
 function copyRow(pick) {
+  const misses = getTicketMisses(pick);
+  const observations = misses.length ? misses.join("; ") : "Clean Pick";
   return [
     pick.date || "",
     getWeekOfYearLabel(pick.date),
@@ -3556,18 +7057,14 @@ function copyRow(pick) {
     pick.module || "",
     pick.feature || "",
     pick.channel || "",
+    observations,
   ].join("\t");
 }
 
 function getWeekOfYearLabel(dateText) {
-  const date = parseDateText(dateText);
-  if (!date) return "";
-  const tmp = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
-  const day = tmp.getUTCDay() || 7;
-  tmp.setUTCDate(tmp.getUTCDate() + 4 - day);
-  const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
-  const week = Math.ceil(((tmp - yearStart) / 86400000 + 1) / 7);
-  return `Week ${week}`;
+  const dateKey = normalizeDateKey(dateText);
+  if (!dateKey) return "";
+  return `Week ${computeQaWeekNumber(dateKey)}`;
 }
 
 function getMonthLabel(dateText) {
@@ -3577,6 +7074,7 @@ function getMonthLabel(dateText) {
 }
 
 async function copyText(text) {
+  triggerHapticPulse();
   if (navigator.clipboard?.writeText) {
     try {
       await navigator.clipboard.writeText(text);
@@ -3602,7 +7100,7 @@ function optionLabel(ticket) {
 }
 
 function persistCopiedTickets() {
-  localStorage.setItem("copiedTickets", JSON.stringify([...copiedTickets]));
+  safeStorageSetItem("copiedTickets", JSON.stringify([...copiedTickets]));
 }
 
 function escapeHtml(value) {
@@ -3780,3 +7278,248 @@ if (typeof window !== "undefined") {
 }
 
 renderTodayCard();
+checkRemoteDailySession();
+
+// Periodic remote session poll (every 15s) and on tab focus
+if (typeof window !== "undefined") {
+  window.addEventListener("focus", () => {
+    checkRemoteDailySession();
+  });
+  setInterval(() => {
+    checkRemoteDailySession();
+  }, 15000);
+}
+
+
+
+// ==========================================================================
+// MORPHING SEARCH CONTROLLER (Single-Element Liquid Spring Morph)
+// ==========================================================================
+// FOCUSED QUICK SEARCH (Ticket ID & Agent Name Only)
+// ==========================================================================
+
+const morphSearchContainer = document.querySelector("#morphSearchContainer");
+const morphSearchBar = document.querySelector("#morphSearchBar");
+const morphSearchIconBtn = document.querySelector("#morphSearchIconBtn");
+const morphSearchContent = document.querySelector("#morphSearchContent");
+const morphSearchInput = document.querySelector("#morphSearchInput");
+const morphSearchClearBtn = document.querySelector("#morphSearchClearBtn");
+const morphSearchPopover = document.querySelector("#morphSearchPopover");
+const morphPopoverResults = document.querySelector("#morphPopoverResults");
+const morphPopoverCount = document.querySelector("#morphPopoverCount");
+
+let isMorphSearchOpen = false;
+
+function expandMorphSearch() {
+  if (!morphSearchBar || isMorphSearchOpen) return;
+  isMorphSearchOpen = true;
+  triggerHapticPulse();
+  morphSearchBar.classList.add("expanded");
+  morphSearchBar.setAttribute("aria-expanded", "true");
+  morphSearchContainer?.classList.add("expanded");
+  if (morphSearchInput) {
+    morphSearchInput.tabIndex = 0;
+    setTimeout(() => {
+      if (isMorphSearchOpen && morphSearchInput) {
+        morphSearchInput.focus();
+        if (morphSearchInput.value) {
+          runMorphSearch(morphSearchInput.value);
+        }
+      }
+    }, 80);
+  }
+}
+
+function collapseMorphSearch(clearQuery = true) {
+  if (!morphSearchBar) return;
+  isMorphSearchOpen = false;
+  morphSearchBar.classList.remove("expanded");
+  morphSearchBar.setAttribute("aria-expanded", "false");
+  morphSearchContainer?.classList.remove("expanded");
+  if (morphSearchPopover) morphSearchPopover.hidden = true;
+  if (morphSearchInput) {
+    morphSearchInput.tabIndex = -1;
+    if (clearQuery) {
+      morphSearchInput.value = "";
+      if (morphSearchClearBtn) morphSearchClearBtn.hidden = true;
+    }
+    morphSearchInput.blur();
+  }
+}
+
+function searchTicketIdOrAgent(query) {
+  const rawQ = clean(query);
+  if (!rawQ) return [];
+  const q = rawQ.toLowerCase().trim();
+  if (!q) return [];
+
+  const candidates = [];
+  const seen = new Set();
+
+  const addTicket = (ticket, agentFallback = "") => {
+    if (!ticket) return;
+    const tid = String(ticket.ticketId || ticket.id || "").trim();
+    if (!tid) return;
+    const agent = String(ticket.agent || ticket.name || agentFallback || "").trim();
+    const channel = String(ticket.channel || "Chat").trim();
+    const compKey = `${channel}::${tid}`;
+    if (seen.has(compKey)) return;
+    seen.add(compKey);
+
+    const tidLower = tid.toLowerCase();
+    const agentLower = agent.toLowerCase();
+
+    // MATCH ONLY: 1. Ticket Number / Ticket ID OR 2. Agent Name
+    const matchesId = tidLower.includes(q);
+    const matchesAgent = agentLower.includes(q);
+
+    if (matchesId || matchesAgent) {
+      let priority = 0;
+      if (tidLower === q) priority = 100;
+      else if (tidLower.startsWith(q)) priority = 80;
+      else if (matchesId) priority = 60;
+      else if (agentLower === q) priority = 50;
+      else if (agentLower.startsWith(q)) priority = 40;
+      else if (matchesAgent) priority = 30;
+
+      candidates.push({
+        ticketId: tid,
+        agent: agent || "Unknown Agent",
+        channel,
+        ticket,
+        priority,
+      });
+    }
+  };
+
+  // 1. Current live daily workbook tickets
+  if (currentPayload?.agents) {
+    currentPayload.agents.forEach((agentObj) => {
+      const agentName = agentObj.name || agentObj.agent || "";
+      (agentObj.tickets || []).forEach((t) => addTicket(t, agentName));
+    });
+  }
+
+  // 2. Historical & saved sampled tickets
+  if (samplerIntelligence) {
+    Object.values(samplerIntelligence).forEach((t) => addTicket(t, t.agent || ""));
+  }
+
+  candidates.sort((a, b) => b.priority - a.priority);
+  return candidates;
+}
+
+function runMorphSearch(query) {
+  const rawQ = clean(query);
+  if (!rawQ || !morphSearchPopover || !morphPopoverResults) {
+    if (morphSearchPopover) morphSearchPopover.hidden = true;
+    if (morphSearchClearBtn) morphSearchClearBtn.hidden = !rawQ;
+    return;
+  }
+
+  if (morphSearchClearBtn) morphSearchClearBtn.hidden = false;
+
+  const matches = searchTicketIdOrAgent(rawQ);
+  
+  if (morphPopoverCount) {
+    morphPopoverCount.textContent = `${matches.length} match${matches.length === 1 ? "" : "es"}`;
+  }
+
+  if (!matches.length) {
+    morphPopoverResults.innerHTML = `
+      <div class="morph-empty-state">
+        <span>No matching ticket or agent found.</span>
+      </div>
+    `;
+  } else {
+    morphPopoverResults.innerHTML = matches.slice(0, 8).map((item) => {
+      const tid = item.ticketId;
+      const channel = item.channel;
+      const agent = item.agent;
+
+      return `
+        <div class="morph-result-item" data-morph-open-ticket="${escapeHtml(tid)}" data-morph-channel="${escapeHtml(channel)}">
+          <div class="morph-result-main">
+            <div class="morph-result-id-row">
+              <strong class="morph-result-id">${escapeHtml(tid)}</strong>
+              <svg class="app-icon icon-external morph-result-ext" viewBox="0 0 24 24" fill="none"><path d="M15 3h6v6M10 14L21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </div>
+            <span class="morph-result-meta">${escapeHtml(agent)} &bull; ${escapeHtml(channel)}</span>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  morphSearchPopover.hidden = false;
+}
+
+// Event Listeners for Morphing Search
+morphSearchBar?.addEventListener("click", () => {
+  if (!isMorphSearchOpen) {
+    expandMorphSearch();
+  }
+});
+
+morphSearchIconBtn?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (!isMorphSearchOpen) {
+    expandMorphSearch();
+  } else {
+    morphSearchInput?.focus();
+  }
+});
+
+morphSearchClearBtn?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  collapseMorphSearch(true);
+});
+
+morphSearchInput?.addEventListener("input", (event) => {
+  runMorphSearch(event.target.value);
+});
+
+morphSearchInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    collapseMorphSearch(true);
+  } else if (event.key === "Enter") {
+    const firstResult = morphPopoverResults?.querySelector("[data-morph-open-ticket]");
+    if (firstResult) {
+      const tid = firstResult.dataset.morphOpenTicket;
+      if (tid) {
+        window.open(`https://carestack.zendesk.com/agent/tickets/${encodeURIComponent(clean(tid))}`, "_blank", "noopener,noreferrer");
+        collapseMorphSearch(true);
+      }
+    }
+  }
+});
+
+// Click result to navigate directly to Zendesk and collapse
+document.addEventListener("click", (event) => {
+  const resultItem = event.target.closest("[data-morph-open-ticket]");
+  if (resultItem) {
+    const tid = resultItem.dataset.morphOpenTicket;
+    if (tid) {
+      window.open(`https://carestack.zendesk.com/agent/tickets/${encodeURIComponent(clean(tid))}`, "_blank", "noopener,noreferrer");
+      collapseMorphSearch(true);
+    }
+    return;
+  }
+
+  // Outside click collapses morph search (retains query if user typed something)
+  if (isMorphSearchOpen && !event.target.closest("#morphSearchContainer")) {
+    const hasQuery = Boolean(morphSearchInput?.value?.trim());
+    collapseMorphSearch(!hasQuery);
+  }
+});
+
+// Keyboard shortcut: Cmd+K / Ctrl+K / / triggers morph search
+document.addEventListener("keydown", (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    expandMorphSearch();
+  } else if (event.key === "/" && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) {
+    event.preventDefault();
+    expandMorphSearch();
+  }
+});
