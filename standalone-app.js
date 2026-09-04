@@ -1934,7 +1934,7 @@ function renderWorksheetLibraryPanel() {
 
 function renderStorageHealthSection() {
   const metrics = getStorageUsageMetrics();
-  const statusColor = metrics.isAboveThreshold ? "var(--coral-primary)" : "var(--teal-secondary)";
+  const statusColor = metrics.isAboveThreshold ? "var(--color-danger)" : "var(--color-success)";
   const statusText = metrics.isAboveThreshold ? "Proactive Compaction Recommended (Usage >80%)" : "Optimal (Well within safety budget)";
 
   return `
@@ -1954,7 +1954,7 @@ function renderStorageHealthSection() {
         </button>
       </div>
       <div style="background: var(--color-surface-tertiary); height: 6px; border-radius: 9999px; margin: 12px 0; overflow: hidden;">
-        <div style="width: ${Math.min(100, Math.max(2, metrics.usagePercent))}%; background: ${metrics.usagePercent > 80 ? "var(--gradient-coral-action)" : "var(--teal-secondary)"}; height: 100%; border-radius: 9999px; transition: width 0.3s ease;"></div>
+        <div style="width: ${Math.min(100, Math.max(2, metrics.usagePercent))}%; background: ${metrics.usagePercent > 80 ? "var(--color-danger)" : "linear-gradient(90deg, var(--ios-teal) 0%, var(--ios-blue) 100%)"}; height: 100%; border-radius: 9999px; transition: width 0.3s ease;"></div>
       </div>
       <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-tertiary); flex-wrap: wrap; gap: 6px;">
         <span>Status: <strong style="color: ${statusColor};">${statusText}</strong></span>

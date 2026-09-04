@@ -8,70 +8,80 @@
     <link rel="alternate icon" href="favicon.svg" />
     <style>
 /* ==========================================================================
-   SAMPLER V3.4 — DESIGN SYSTEM (DARK AESTHETIC TEAL)
-   Palette:
-     Primary (Vibrant Teal):   #14B8A6
-     Primary Accent (Cyan):    #2DD4BF
-     Background:               #061517
-     Surface (Card/Panel):     #0B1F23
-     Surface Secondary:        #102B30
-     Surface Tertiary:         #16373F
-     Text (Primary):           #F0FDFA
-     Text (Muted):             #7EA8A5
-     Border/Divider:           rgba(45, 212, 191, 0.16)
-     Warning:                  #FBBF24
-     Danger (Coral Rose):      #FB7185
-     Success (Mint Emerald):   #34D399
+   SAMPLER V3.4 — LIQUID iOS DESIGN SYSTEM
+   Palette & Materials:
+     System Blue:        #0A84FF
+     System Indigo:      #5E5CE6
+     System Purple:      #BF5AF2
+     System Pink:        #FF375F
+     System Cyan/Teal:   #64D2FF
+     System Green/Mint:  #30D158
+     System Orange:      #FF9F0A
+     System Red:         #FF453A
+     System Background:  #060812 (Liquid Mesh)
+     Liquid Glass:       rgba(22, 26, 38, 0.65) with blur(28px) saturate(190%)
+     Border & Specular:  rgba(255, 255, 255, 0.14) & inset specular rim
    ========================================================================== */
 
 :root {
   color-scheme: dark;
 
-  /* --- 1. Master Dark Aesthetic Teal Palette --- */
-  --color-primary: #14B8A6;
-  --color-primary-dark: #2DD4BF;
-  --color-accent: #14B8A6;
-  --color-accent-hover: #2DD4BF;
-  --color-accent-active: #0D9488;
-  --color-background: #061517;
-  --color-bg: #061517;
-  --color-surface: #0B1F23;
-  --color-surface-secondary: #102B30;
-  --color-surface-tertiary: #16373F;
-  --color-surface-glass: rgba(11, 31, 35, 0.90);
-  --color-text-primary: #F0FDFA;
-  --color-text-muted: #7EA8A5;
-  --color-border: rgba(45, 212, 191, 0.16);
-  --color-divider: rgba(45, 212, 191, 0.14);
-  --color-warning: #FBBF24;
-  --color-warning-hover: #F59E0B;
-  --color-danger: #FB7185;
-  --color-danger-hover: #F43F5E;
-  --color-success: #34D399;
-  --color-success-hover: #10B981;
+  /* --- 1. Master Liquid iOS System Colors --- */
+  --ios-blue: #0A84FF;
+  --ios-indigo: #5E5CE6;
+  --ios-purple: #BF5AF2;
+  --ios-pink: #FF375F;
+  --ios-teal: #64D2FF;
+  --ios-mint: #66D4CF;
+  --ios-green: #30D158;
+  --ios-yellow: #FFD60A;
+  --ios-orange: #FF9F0A;
+  --ios-red: #FF453A;
 
-  /* Refined Tints & Accents */
-  --color-primary-tint: rgba(20, 184, 166, 0.14);
-  --color-primary-tint-hover: rgba(20, 184, 166, 0.22);
-  --color-primary-tint-border: rgba(45, 212, 191, 0.28);
-  --color-primary-tint-strong: rgba(45, 212, 191, 0.42);
+  --color-primary: #0A84FF;
+  --color-primary-dark: #5E5CE6;
+  --color-accent: #0A84FF;
+  --color-accent-hover: #409CFF;
+  --color-accent-active: #0071E3;
+  --color-background: #060812;
+  --color-bg: #060812;
+  --color-surface: rgba(22, 26, 38, 0.65);
+  --color-surface-secondary: rgba(34, 38, 54, 0.60);
+  --color-surface-tertiary: rgba(48, 54, 76, 0.70);
+  --color-surface-glass: rgba(20, 24, 36, 0.82);
+  --color-text-primary: #FFFFFF;
+  --color-text-muted: rgba(235, 235, 245, 0.60);
+  --color-border: rgba(255, 255, 255, 0.14);
+  --color-divider: rgba(255, 255, 255, 0.10);
+  --color-warning: #FF9F0A;
+  --color-warning-hover: #FFB340;
+  --color-danger: #FF453A;
+  --color-danger-hover: #FF6961;
+  --color-success: #30D158;
+  --color-success-hover: #34C759;
 
-  --color-accent-tint: rgba(45, 212, 191, 0.14);
-  --color-accent-tint-hover: rgba(45, 212, 191, 0.22);
-  --color-accent-tint-border: rgba(45, 212, 191, 0.32);
-  --color-accent-tint-strong: rgba(45, 212, 191, 0.45);
+  /* Refined Liquid iOS Tints & Accents */
+  --color-primary-tint: rgba(10, 132, 255, 0.16);
+  --color-primary-tint-hover: rgba(10, 132, 255, 0.26);
+  --color-primary-tint-border: rgba(10, 132, 255, 0.35);
+  --color-primary-tint-strong: rgba(10, 132, 255, 0.45);
 
-  --color-success-tint: rgba(52, 211, 153, 0.15);
-  --color-success-tint-border: rgba(52, 211, 153, 0.32);
+  --color-accent-tint: rgba(10, 132, 255, 0.16);
+  --color-accent-tint-hover: rgba(10, 132, 255, 0.26);
+  --color-accent-tint-border: rgba(10, 132, 255, 0.35);
+  --color-accent-tint-strong: rgba(10, 132, 255, 0.50);
 
-  --color-danger-tint: rgba(251, 113, 133, 0.16);
-  --color-danger-tint-border: rgba(251, 113, 133, 0.32);
+  --color-success-tint: rgba(48, 209, 88, 0.16);
+  --color-success-tint-border: rgba(48, 209, 88, 0.35);
 
-  --color-warning-tint: rgba(251, 191, 36, 0.14);
-  --color-warning-tint-border: rgba(251, 191, 36, 0.3);
+  --color-danger-tint: rgba(255, 69, 58, 0.16);
+  --color-danger-tint-border: rgba(255, 69, 58, 0.35);
 
-  /* --- 2. Typography Hierarchy (Apple Scale: 28/22/17/15/13/11) --- */
-  --font-stack: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --color-warning-tint: rgba(255, 159, 10, 0.16);
+  --color-warning-tint-border: rgba(255, 159, 10, 0.35);
+
+  /* --- 2. Typography Hierarchy (Apple Human Interface Guidelines) --- */
+  --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
   --font-size-large-title: 28px;
   --font-size-title: 22px;
   --font-size-headline: 17px;
@@ -86,35 +96,35 @@
   --line-height-tight: 1.25;
   --line-height-normal: 1.48;
 
-  --text-primary: #F0FDFA;
-  --text-secondary: #A7CBC8;
-  --text-tertiary: #7EA8A5;
-  --text-quaternary: #4E7876;
-  --text-muted: #7EA8A5;
-  --text-on-primary: #041A1D;
-  --text-on-dark: #F0FDFA;
-  --text-on-dark-muted: rgba(240, 253, 250, 0.75);
+  --text-primary: #FFFFFF;
+  --text-secondary: rgba(235, 235, 245, 0.70);
+  --text-tertiary: rgba(235, 235, 245, 0.44);
+  --text-quaternary: rgba(235, 235, 245, 0.24);
+  --text-muted: rgba(235, 235, 245, 0.55);
+  --text-on-primary: #FFFFFF;
+  --text-on-dark: #FFFFFF;
+  --text-on-dark-muted: rgba(235, 235, 245, 0.75);
 
   /* --- 3. Separators & Borders --- */
-  --border: rgba(45, 212, 191, 0.16);
-  --separator-subtle: rgba(45, 212, 191, 0.12);
-  --separator-medium: rgba(45, 212, 191, 0.18);
-  --separator-strong: rgba(45, 212, 191, 0.32);
-  --card-top-highlight: 1px solid rgba(94, 234, 212, 0.14);
+  --border: rgba(255, 255, 255, 0.14);
+  --separator-subtle: rgba(255, 255, 255, 0.08);
+  --separator-medium: rgba(255, 255, 255, 0.14);
+  --separator-strong: rgba(255, 255, 255, 0.24);
+  --card-top-highlight: 1px solid rgba(255, 255, 255, 0.22);
 
-  /* --- 4. Corner Radius Scale --- */
-  --radius-xs: 4px;
-  --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --radius-xl: 24px;
-  --radius-pill: 999px;
+  /* --- 4. Corner Radius Scale (iOS Continuous Squircles) --- */
+  --radius-xs: 6px;
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 22px;
+  --radius-xl: 28px;
+  --radius-pill: 9999px;
 
-  /* --- 5. Layered Elevation Tokens --- */
+  /* --- 5. Liquid Glass Elevation & Specular Reflections --- */
   --elevation-0: none;
-  --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.45), 0 4px 16px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(45, 212, 191, 0.08);
-  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.55), 0 10px 28px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(45, 212, 191, 0.16);
-  --elevation-3: 0 16px 44px rgba(0, 0, 0, 0.75), 0 0 32px rgba(20, 184, 166, 0.18), 0 0 0 1px rgba(45, 212, 191, 0.24);
+  --elevation-1: inset 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 4px 16px rgba(0, 0, 0, 0.35);
+  --elevation-2: inset 0 1px 0 0 rgba(255, 255, 255, 0.25), 0 10px 28px rgba(0, 0, 0, 0.45), 0 0 20px rgba(10, 132, 255, 0.10);
+  --elevation-3: inset 0 1px 0 0 rgba(255, 255, 255, 0.30), 0 24px 60px rgba(0, 0, 0, 0.75), 0 0 36px rgba(10, 132, 255, 0.20);
 
   /* Backward Compatibility Aliases */
   --shadow-none: var(--elevation-0);
@@ -122,13 +132,13 @@
   --shadow-card: var(--elevation-1);
   --shadow-card-hover: var(--elevation-2);
   --shadow-elevated: var(--elevation-2);
-  --shadow-primary-btn: 0 2px 10px rgba(20, 184, 166, 0.4), 0 0 15px rgba(45, 212, 191, 0.2);
-  --shadow-primary-btn-hover: 0 4px 18px rgba(20, 184, 166, 0.55), 0 0 25px rgba(45, 212, 191, 0.3);
+  --shadow-primary-btn: 0 4px 18px rgba(10, 132, 255, 0.42), inset 0 1px 0 0 rgba(255, 255, 255, 0.35);
+  --shadow-primary-btn-hover: 0 6px 24px rgba(10, 132, 255, 0.55), inset 0 1px 0 0 rgba(255, 255, 255, 0.45);
   --shadow-modal: var(--elevation-3);
 
   /* --- 6. Focus & Interaction Details --- */
-  --focus-ring: 0 0 0 3px rgba(45, 212, 191, 0.35);
-  --focus-ring-danger: 0 0 0 3px rgba(251, 113, 133, 0.3);
+  --focus-ring: 0 0 0 3.5px rgba(10, 132, 255, 0.45);
+  --focus-ring-danger: 0 0 0 3.5px rgba(255, 69, 58, 0.40);
 
   /* --- 7. Fluid Motion Tokens --- */
   --ease-ios: cubic-bezier(0.25, 1, 0.5, 1);
@@ -145,13 +155,13 @@
   --panel: var(--color-surface);
   --soft: var(--color-surface-secondary);
   --surface-secondary: var(--color-surface-secondary);
-  --teal: var(--color-primary);
-  --amber: var(--color-warning);
-  --red: var(--color-danger);
-  --green: var(--color-success);
-  --coral-primary: var(--color-danger);
-  --teal-secondary: var(--color-accent);
-  --gradient-coral-action: var(--color-danger);
+  --teal: var(--ios-teal);
+  --amber: var(--ios-orange);
+  --red: var(--ios-red);
+  --green: var(--ios-green);
+  --coral-primary: var(--ios-red);
+  --teal-secondary: var(--ios-blue);
+  --gradient-coral-action: var(--ios-red);
 }
 
 /* ================= Reset & Global Foundation ================= */
@@ -165,32 +175,34 @@ body {
   margin: 0;
   background-color: var(--color-bg);
   background-image:
-    radial-gradient(at 12% 12%, rgba(20, 184, 166, 0.08) 0px, transparent 55%),
-    radial-gradient(at 88% 18%, rgba(13, 148, 136, 0.1) 0px, transparent 50%),
-    radial-gradient(at 50% 85%, rgba(45, 212, 191, 0.06) 0px, transparent 65%);
+    radial-gradient(at 0% 0%, rgba(94, 92, 230, 0.30) 0px, transparent 55%),
+    radial-gradient(at 100% 0%, rgba(10, 132, 255, 0.26) 0px, transparent 50%),
+    radial-gradient(at 50% 45%, rgba(100, 210, 255, 0.12) 0px, transparent 65%),
+    radial-gradient(at 85% 95%, rgba(48, 209, 88, 0.16) 0px, transparent 48%),
+    radial-gradient(at 15% 95%, rgba(255, 55, 95, 0.16) 0px, transparent 52%);
   background-attachment: fixed;
   color: var(--text-primary);
   font-family: var(--font-stack);
   font-size: var(--font-size-body);
   line-height: var(--line-height-normal);
-  letter-spacing: -0.011em;
+  letter-spacing: -0.015em;
   font-variant-numeric: tabular-nums;
 }
 
-/* --- Dark Aesthetic Teal Scrollbars --- */
+/* --- Liquid iOS Slim Scrollbars --- */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--color-bg);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(45, 212, 191, 0.22);
+  background: rgba(255, 255, 255, 0.20);
   border-radius: var(--radius-pill);
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(45, 212, 191, 0.38);
+  background: rgba(255, 255, 255, 0.36);
 }
 
 /* Tabular Numerals & Metric Anti-Jitter */
@@ -304,10 +316,12 @@ button:active,
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  padding: 20px 26px;
+  padding: 20px 28px;
   background: var(--color-surface);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
   color: var(--text-primary);
-  border: 1px solid var(--separator-subtle);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-card);
   position: relative;
@@ -327,9 +341,9 @@ button:active,
   height: 48px;
   flex: 0 0 auto;
   border-radius: var(--radius-md);
-  background: var(--color-primary-tint);
+  background: rgba(10, 132, 255, 0.16);
   object-fit: cover;
-  box-shadow: 0 2px 10px rgba(20, 184, 166, 0.3), 0 0 0 1px rgba(45, 212, 191, 0.25) inset;
+  box-shadow: 0 4px 14px rgba(10, 132, 255, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.22) inset;
   transition: transform var(--duration-control) var(--ease-spring);
 }
 
@@ -368,12 +382,12 @@ p {
   height: 7px;
   border-radius: 50%;
   background: currentColor;
-  box-shadow: 0 0 6px currentColor;
+  box-shadow: 0 0 8px currentColor;
   transition: color var(--duration-control) var(--ease-ios);
 }
 
 .connection-indicator.online {
-  color: var(--color-primary);
+  color: var(--ios-green);
 }
 
 .connection-indicator.connecting {
@@ -396,8 +410,10 @@ p {
 
 .status {
   padding: 14px 18px;
-  border: 1px solid var(--separator-subtle);
+  border: 1px solid var(--color-border);
   background: var(--color-surface);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
   border-radius: var(--radius-lg);
   color: var(--text-secondary);
   font-size: 13.5px;
@@ -411,10 +427,12 @@ p {
   justify-content: space-between;
   gap: 16px;
   margin-top: 18px;
-  padding: 20px 24px;
-  border: 1px solid var(--separator-subtle);
+  padding: 22px 26px;
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   background: var(--color-surface);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
   box-shadow: var(--shadow-card);
   transition: transform var(--duration-panel) var(--ease-ios),
               box-shadow var(--duration-panel) var(--ease-ios),
@@ -427,7 +445,7 @@ p {
 
 .today-card:hover {
   box-shadow: var(--shadow-card-hover);
-  border-color: var(--color-primary-tint-border);
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
 .today-card-info {
@@ -447,10 +465,11 @@ p {
   display: inline-flex;
   align-items: center;
   width: max-content;
-  padding: 3px 9px;
+  padding: 3px 10px;
   border-radius: var(--radius-pill);
-  background: var(--color-primary-tint);
-  color: var(--color-primary);
+  background: rgba(10, 132, 255, 0.16);
+  color: #64D2FF;
+  border: 1px solid rgba(10, 132, 255, 0.32);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
@@ -460,40 +479,42 @@ p {
 .session-day-segmented {
   display: inline-flex;
   align-items: center;
-  background: var(--color-surface-secondary);
-  padding: 2px;
+  background: rgba(118, 118, 128, 0.24);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 3px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--color-border);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   gap: 2px;
 }
 
 .session-day-btn {
   background: transparent;
   border: none;
-  padding: 3px 10px;
+  padding: 4px 12px;
   border-radius: var(--radius-pill);
   font-family: inherit;
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: rgba(235, 235, 245, 0.65);
   cursor: pointer;
   transition: all var(--duration-control) var(--ease-ios);
   white-space: nowrap;
 }
 
 .session-day-btn:hover {
-  color: var(--text-primary);
+  color: #FFFFFF;
 }
 
 .session-day-btn.active {
-  background: var(--color-surface-tertiary);
-  color: var(--color-primary-dark);
+  background: rgba(255, 255, 255, 0.95);
+  color: #000000;
   font-weight: 700;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 .session-title {
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.02em;
@@ -511,17 +532,17 @@ p {
   gap: 10px;
 }
 
-/* Primary Action Button (Vibrant Aesthetic Teal) */
+/* Primary Action Button (Liquid iOS System Blue Gradient) */
 .primary-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 40px;
-  padding: 0 18px;
+  padding: 0 20px;
   border: none;
-  border-radius: var(--radius-md);
-  background: var(--color-accent);
-  color: var(--text-on-primary);
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, #0A84FF 0%, #5E5CE6 100%);
+  color: #FFFFFF;
   font-family: inherit;
   font-size: 13px;
   font-weight: 700;
@@ -529,62 +550,64 @@ p {
   cursor: pointer;
   box-shadow: var(--shadow-primary-btn);
   transition: transform var(--duration-micro) var(--ease-ios),
-              background-color var(--duration-control) var(--ease-ios),
+              filter var(--duration-control) var(--ease-ios),
               box-shadow var(--duration-control) var(--ease-ios);
 }
 
 .primary-action:hover {
-  background: var(--color-accent-hover);
+  filter: brightness(1.1);
   box-shadow: var(--shadow-primary-btn-hover);
   transform: translateY(-1px);
 }
 
 .primary-action:active {
-  background: var(--color-accent-active);
-  transform: scale(0.98);
+  transform: scale(0.96);
+  filter: brightness(0.95);
 }
 
-/* Secondary Action Button (Clean Surface with Subtle Border) */
+/* Secondary Action Button (Liquid Translucent Material) */
 .secondary-action,
 .ops-action-inline {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-height: 40px;
-  padding: 0 16px;
-  border: 1px solid var(--separator-medium);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
+  padding: 0 18px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   color: var(--text-primary);
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: var(--shadow-subtle);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 2px 8px rgba(0, 0, 0, 0.2);
   transition: transform var(--duration-micro) var(--ease-ios),
-              background-color var(--duration-control) var(--ease-ios),
+              background var(--duration-control) var(--ease-ios),
               border-color var(--duration-control) var(--ease-ios),
               color var(--duration-control) var(--ease-ios);
 }
 
 .secondary-action:hover,
 .ops-action-inline:hover {
-  background: var(--color-surface-tertiary);
-  border-color: var(--color-primary-tint-border);
-  color: var(--color-primary-dark);
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #FFFFFF;
   transform: translateY(-1px);
 }
 
 .secondary-action:active,
 .ops-action-inline:active {
-  transform: scale(0.98);
+  transform: scale(0.96);
 }
 
 .ops-action-inline.small {
   min-height: 32px;
-  padding: 0 12px;
+  padding: 0 14px;
   font-size: 12px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
 }
 
 /* Session Banner for Historical Viewing */
@@ -599,15 +622,17 @@ p {
   justify-content: space-between;
   gap: 12px;
   margin-top: 14px;
-  padding: 14px 18px;
-  border: 1px solid var(--color-primary-tint-border);
+  padding: 14px 20px;
+  border: 1px solid rgba(10, 132, 255, 0.30);
   border-radius: var(--radius-lg);
-  background: var(--color-primary-tint);
+  background: rgba(10, 132, 255, 0.14);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
 }
 
 .session-banner strong {
   display: block;
-  color: var(--color-primary-dark);
+  color: #64D2FF;
   font-size: 13.5px;
   font-weight: 700;
 }
@@ -630,9 +655,11 @@ p {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 6px;
   padding: 5px;
-  background: var(--color-surface-secondary);
-  border-radius: var(--radius-xl);
-  border: 1px solid var(--separator-subtle);
+  background: rgba(118, 118, 128, 0.22);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(255, 255, 255, 0.10);
 }
 
 .auditor-tabs[hidden] {
@@ -642,9 +669,9 @@ p {
 .auditor-tabs button {
   min-height: 40px;
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   background: transparent;
-  color: var(--text-secondary);
+  color: rgba(235, 235, 245, 0.70);
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -656,19 +683,19 @@ p {
 }
 
 .auditor-tabs button:hover {
-  background: var(--color-surface-tertiary);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
 }
 
 .auditor-tabs button.active {
-  background: var(--color-accent);
-  color: var(--text-on-primary);
+  background: linear-gradient(135deg, #0A84FF 0%, #0066D6 100%);
+  color: #FFFFFF;
   font-weight: 700;
-  box-shadow: 0 2px 10px rgba(20, 184, 166, 0.35);
+  box-shadow: 0 4px 16px rgba(10, 132, 255, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 .auditor-tabs button:active {
-  transform: scale(0.98);
+  transform: scale(0.97);
 }
 
 /* Controls Toolbar (Copy All Ideal Picks + Channel Filter) */
@@ -677,11 +704,13 @@ p {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 18px;
+  padding: 12px 20px;
   background: var(--color-surface);
-  border: 1px solid var(--separator-subtle);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-subtle);
+  box-shadow: var(--shadow-card);
 }
 
 .controls[hidden] {
@@ -690,30 +719,30 @@ p {
 
 #copyIdeal {
   min-height: 38px;
-  padding: 0 20px;
+  padding: 0 22px;
   border: none;
-  border-radius: var(--radius-md);
-  background: var(--color-accent);
-  color: var(--text-on-primary);
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, #0A84FF 0%, #5E5CE6 100%);
+  color: #FFFFFF;
   font-family: inherit;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   box-shadow: var(--shadow-primary-btn);
   transition: transform var(--duration-micro) var(--ease-ios),
-              background-color var(--duration-control) var(--ease-ios),
+              filter var(--duration-control) var(--ease-ios),
               box-shadow var(--duration-control) var(--ease-ios);
 }
 
 #copyIdeal:hover {
-  background: var(--color-accent-hover);
+  filter: brightness(1.1);
   box-shadow: var(--shadow-primary-btn-hover);
   transform: translateY(-1px);
 }
 
 #copyIdeal:active {
-  background: var(--color-accent-active);
-  transform: scale(0.98);
+  transform: scale(0.96);
+  filter: brightness(0.95);
 }
 
 .segmented {
@@ -721,9 +750,11 @@ p {
   align-items: center;
   gap: 3px;
   padding: 3px;
-  background: var(--color-surface-secondary);
-  border: 1px solid var(--separator-subtle);
-  border-radius: var(--radius-md);
+  background: rgba(118, 118, 128, 0.24);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-pill);
 }
 
 .segmented button {
@@ -731,9 +762,9 @@ p {
   min-height: 32px;
   padding: 0 12px;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   background: transparent;
-  color: var(--text-secondary);
+  color: rgba(235, 235, 245, 0.65);
   font-family: inherit;
   font-size: 12.5px;
   font-weight: 600;
@@ -742,15 +773,15 @@ p {
 }
 
 .segmented button:hover:not(.active) {
-  background: rgba(45, 212, 191, 0.08);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
 }
 
 .segmented button.active {
-  background: var(--color-surface-tertiary);
-  color: var(--color-primary-dark);
+  background: rgba(255, 255, 255, 0.95);
+  color: #000000;
   font-weight: 700;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.25), 0 1px 2px rgba(0, 0, 0, 0.15);
 }
 
 /* ================= 4. Mini Metrics & Summary Cards ================= */
@@ -807,18 +838,22 @@ p {
 }
 
 .metric {
-  padding: 18px 20px;
+  padding: 20px 22px;
   background: var(--color-surface);
-  border: 1px solid var(--separator-subtle);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-subtle);
+  box-shadow: var(--shadow-card);
   transition: box-shadow var(--duration-panel) var(--ease-ios),
-              border-color var(--duration-panel) var(--ease-ios);
+              border-color var(--duration-panel) var(--ease-ios),
+              transform var(--duration-panel) var(--ease-spring);
 }
 
 .metric:hover {
-  box-shadow: var(--shadow-card);
-  border-color: var(--color-primary-tint-border);
+  box-shadow: var(--shadow-card-hover);
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(-2px);
 }
 
 .metric strong {
@@ -847,7 +882,9 @@ p {
 /* ================= 5. Agent Cards & Auditing Tables ================= */
 .agent {
   background: var(--color-surface);
-  border: 1px solid var(--separator-subtle);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
   overflow: hidden;
   box-shadow: var(--shadow-card);
@@ -857,7 +894,7 @@ p {
 
 .agent:hover {
   box-shadow: var(--shadow-card-hover);
-  border-color: var(--color-primary-tint-border);
+  border-color: rgba(255, 255, 255, 0.22);
 }
 
 .agent-header {
@@ -865,9 +902,9 @@ p {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 20px;
-  background: var(--color-surface-secondary);
-  border-bottom: 1px solid var(--separator-subtle);
+  padding: 16px 22px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .agent-title {
@@ -884,7 +921,7 @@ p {
 }
 
 .agent-title:hover {
-  color: var(--color-primary);
+  color: #64D2FF;
 }
 
 .pill {
@@ -893,15 +930,17 @@ p {
   min-height: 24px;
   padding: 0 10px;
   border-radius: var(--radius-pill);
-  background: var(--color-primary-tint);
-  color: var(--color-primary-dark);
+  background: rgba(10, 132, 255, 0.16);
+  color: #64D2FF;
+  border: 1px solid rgba(10, 132, 255, 0.32);
   font-size: 11.5px;
   font-weight: 700;
 }
 
 .pill.shortage {
-  background: var(--color-danger-tint);
-  color: var(--color-danger);
+  background: rgba(255, 69, 58, 0.16);
+  color: #FF453A;
+  border: 1px solid rgba(255, 69, 58, 0.32);
 }
 
 .table-wrap {
@@ -917,7 +956,7 @@ table {
 th,
 td {
   padding: 12px 16px;
-  border-bottom: 1px solid var(--separator-subtle);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   text-align: left;
   vertical-align: middle;
   font-size: 13px;
@@ -925,16 +964,16 @@ td {
 }
 
 th {
-  background: var(--color-surface-secondary);
-  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(235, 235, 245, 0.65);
   font-weight: 600;
   font-size: 11.5px;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
 }
 
 tr:hover td {
-  background: rgba(45, 212, 191, 0.05);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .rank {
@@ -960,40 +999,37 @@ tr:hover td {
 }
 
 .ticket-link {
-  color: var(--color-primary-dark);
+  color: #64D2FF;
   font-weight: 600;
   text-decoration: none;
   transition: color var(--duration-control) var(--ease-ios);
 }
 
 .ticket-link:hover {
-  color: var(--color-primary);
+  color: #0A84FF;
   text-decoration: underline;
 }
 
 .copy-btn {
   min-width: 68px;
   min-height: 30px;
-  border: 1px solid var(--color-primary-tint-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-secondary);
-  color: var(--color-primary-dark);
+  border: 1px solid rgba(10, 132, 255, 0.35);
+  border-radius: var(--radius-pill);
+  background: rgba(10, 132, 255, 0.15);
+  color: #64D2FF;
   font-family: inherit;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   box-shadow: var(--shadow-subtle);
-  transition: transform var(--duration-micro) var(--ease-ios),
-              background-color var(--duration-control) var(--ease-ios),
-              color var(--duration-control) var(--ease-ios),
-              border-color var(--duration-control) var(--ease-ios);
+  transition: all var(--duration-control) var(--ease-ios);
 }
 
 .copy-btn:hover {
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-  color: var(--text-on-primary);
-  box-shadow: var(--shadow-primary-btn);
+  background: #0A84FF;
+  border-color: #0A84FF;
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(10, 132, 255, 0.45);
   transform: translateY(-1px);
 }
 
@@ -1010,23 +1046,21 @@ tr:hover td {
   min-width: 80px;
   min-height: 26px;
   margin-top: 4px;
-  border: 1px solid var(--separator-medium);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface-secondary);
-  color: var(--text-tertiary);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(235, 235, 245, 0.65);
   font-family: inherit;
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
-  transition: border-color var(--duration-control) var(--ease-ios),
-              color var(--duration-control) var(--ease-ios),
-              background-color var(--duration-control) var(--ease-ios);
+  transition: all var(--duration-control) var(--ease-ios);
 }
 
 .reject-btn:hover {
-  background: var(--color-danger-tint);
-  border-color: var(--color-danger-tint-border);
-  color: var(--color-danger);
+  background: rgba(255, 69, 58, 0.18);
+  border-color: rgba(255, 69, 58, 0.35);
+  color: #FF453A;
 }
 
 .checks,
@@ -1048,32 +1082,37 @@ tr:hover td {
 }
 
 .check.yes {
-  background: var(--color-primary-tint);
-  color: var(--color-primary-dark);
+  background: rgba(48, 209, 88, 0.16);
+  color: #30D158;
+  border: 1px solid rgba(48, 209, 88, 0.32);
 }
 
 .check.no {
-  background: var(--color-danger-tint);
-  color: var(--color-danger);
+  background: rgba(255, 69, 58, 0.16);
+  color: #FF453A;
+  border: 1px solid rgba(255, 69, 58, 0.32);
 }
 
 .check.neutral {
-  background: rgba(45, 212, 191, 0.08);
-  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(235, 235, 245, 0.70);
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .tag {
-  background: var(--color-warning-tint);
-  color: var(--color-warning);
+  background: rgba(255, 159, 10, 0.16);
+  color: #FF9F0A;
+  border: 1px solid rgba(255, 159, 10, 0.32);
 }
 
 .muted-tag {
-  background: rgba(45, 212, 191, 0.08);
-  color: var(--text-tertiary);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(235, 235, 245, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.10);
 }
 
 .duplicate {
-  background: rgba(20, 184, 166, 0.05);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .rejected {
@@ -1090,23 +1129,25 @@ tr:hover td {
   display: flex;
   width: max-content;
   margin-top: 4px;
-  background: var(--color-danger-tint);
-  color: var(--color-danger);
+  background: rgba(255, 69, 58, 0.16);
+  color: #FF453A;
+  border: 1px solid rgba(255, 69, 58, 0.32);
 }
 
 .rejected-label {
-  background: var(--color-danger-tint);
-  color: var(--color-danger);
+  background: rgba(255, 69, 58, 0.16);
+  color: #FF453A;
+  border: 1px solid rgba(255, 69, 58, 0.32);
 }
 
 .merged-child {
   opacity: 0.52;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(0, 0, 0, 0.30);
 }
 
 .merged-label {
-  background: var(--color-surface-tertiary);
-  color: var(--text-tertiary);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(235, 235, 245, 0.65);
 }
 
 .tags-btn {
@@ -1114,26 +1155,28 @@ tr:hover td {
   align-items: center;
   min-height: 22px;
   margin: 0 0 4px 6px;
-  padding: 0 8px;
-  border: 1px solid var(--separator-medium);
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: var(--radius-pill);
-  background: var(--color-surface-secondary);
-  color: var(--color-primary-dark);
+  background: rgba(255, 255, 255, 0.08);
+  color: #64D2FF;
   font-family: inherit;
   font-size: 11.5px;
   font-weight: 600;
   cursor: pointer;
-  transition: background-color var(--duration-control) var(--ease-ios);
+  transition: all var(--duration-control) var(--ease-ios);
 }
 
 .tags-btn:hover {
-  background: var(--color-primary-tint);
+  background: rgba(10, 132, 255, 0.18);
+  border-color: rgba(10, 132, 255, 0.35);
+  color: #FFFFFF;
 }
 
 .other-tickets {
-  padding: 14px 18px 18px;
-  border-top: 1px solid var(--separator-subtle);
-  background: var(--color-surface-secondary);
+  padding: 14px 20px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .other-tickets summary {
@@ -1146,24 +1189,24 @@ tr:hover td {
 .other-tickets select {
   width: 100%;
   margin-top: 8px;
-  border: 1px solid var(--separator-medium);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: var(--radius-md);
   padding: 8px 12px;
   font: inherit;
-  background: var(--color-surface-secondary);
+  background: rgba(30, 32, 44, 0.85);
   color: var(--text-primary);
 }
 
 .other-table-wrap {
   margin-top: 10px;
-  border: 1px solid var(--separator-subtle);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-surface);
 }
 
 .agent-history {
   padding: 16px 20px;
-  border-bottom: 1px solid var(--separator-subtle);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   background: var(--color-surface);
 }
 
@@ -1180,10 +1223,10 @@ tr:hover td {
 }
 
 .month-summary {
-  border: 1px solid var(--separator-subtle);
+  border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: var(--radius-md);
   overflow: hidden;
-  background: var(--color-surface-secondary);
+  background: rgba(255, 255, 255, 0.04);
   transition: box-shadow var(--duration-panel) var(--ease-ios);
 }
 
@@ -1204,7 +1247,7 @@ tr:hover td {
 
 .miss-table-wrap {
   overflow-x: auto;
-  border-top: 1px solid var(--separator-subtle);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .miss-table {
@@ -1212,7 +1255,7 @@ tr:hover td {
 }
 
 .miss-table th {
-  background: var(--color-surface-tertiary);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text-primary);
 }
 
@@ -1222,15 +1265,16 @@ tr:hover td {
   align-items: center;
   padding: 0 8px;
   border-radius: var(--radius-pill);
-  background: var(--color-surface-tertiary);
-  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(235, 235, 245, 0.75);
   font-size: 11.5px;
   font-weight: 600;
 }
 
 .pattern.major {
-  background: var(--color-danger-tint);
-  color: var(--color-danger);
+  background: rgba(255, 69, 58, 0.16);
+  color: #FF453A;
+  border: 1px solid rgba(255, 69, 58, 0.32);
 }
 
 /* ==========================================================================
@@ -1253,9 +1297,9 @@ tr:hover td {
   position: fixed;
   inset: 0;
   z-index: 24;
-  background: rgba(3, 10, 12, 0.75);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(0, 0, 0, 0.60);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--duration-control) var(--ease-ios);
@@ -1271,10 +1315,10 @@ tr:hover td {
   width: 52px;
   height: 52px;
   border-radius: var(--radius-pill);
-  border: 1px solid rgba(45, 212, 191, 0.35);
-  background: linear-gradient(135deg, #0D9488 0%, #14B8A6 100%);
-  color: #041A1D;
-  box-shadow: 0 10px 28px rgba(20, 184, 166, 0.35), 0 0 20px rgba(45, 212, 191, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: linear-gradient(135deg, #0A84FF 0%, #5E5CE6 100%);
+  color: #FFFFFF;
+  box-shadow: 0 10px 28px rgba(10, 132, 255, 0.45), 0 0 20px rgba(94, 92, 230, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.4);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -1282,12 +1326,12 @@ tr:hover td {
   position: relative;
   transition: transform var(--duration-panel) var(--ease-spring),
               box-shadow var(--duration-control) var(--ease-ios),
-              background var(--duration-control) var(--ease-ios);
+              filter var(--duration-control) var(--ease-ios);
 }
 
 .ops-toggle:hover {
   transform: scale(1.08) translateY(-2px);
-  box-shadow: 0 14px 34px rgba(20, 184, 166, 0.5), 0 0 28px rgba(45, 212, 191, 0.35);
+  box-shadow: 0 14px 34px rgba(10, 132, 255, 0.55), 0 0 28px rgba(94, 92, 230, 0.45);
 }
 
 .ops-toggle:active {
@@ -1335,14 +1379,14 @@ tr:hover td {
 .ops-menu {
   position: relative;
   z-index: 25;
-  width: 272px;
+  width: 276px;
   padding: 10px;
-  border-radius: 20px;
-  background: var(--color-surface-glass);
-  backdrop-filter: blur(28px) saturate(190%);
-  -webkit-backdrop-filter: blur(28px) saturate(190%);
-  border: 1px solid var(--separator-medium);
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65), 0 0 32px rgba(20, 184, 166, 0.12);
+  border-radius: 24px;
+  background: rgba(22, 25, 36, 0.82);
+  backdrop-filter: blur(36px) saturate(200%);
+  -webkit-backdrop-filter: blur(36px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.25), 0 24px 64px rgba(0, 0, 0, 0.75), 0 0 32px rgba(10, 132, 255, 0.15);
   transform-origin: bottom right;
   opacity: 0;
   transform: scale(0.92) translateY(12px);
@@ -1387,7 +1431,7 @@ tr:hover td {
   align-items: center;
   gap: 12px;
   padding: 8px 10px;
-  border-radius: 12px;
+  border-radius: 14px;
   border: none;
   background: transparent;
   text-align: left;
@@ -1398,13 +1442,13 @@ tr:hover td {
 }
 
 .ops-action:hover {
-  background: rgba(45, 212, 191, 0.12);
+  background: rgba(255, 255, 255, 0.08);
   transform: translateX(2px);
 }
 
 .ops-action:active {
   transform: scale(0.98);
-  background: rgba(45, 212, 191, 0.18);
+  background: rgba(255, 255, 255, 0.14);
 }
 
 .ops-glyph {
@@ -1428,8 +1472,8 @@ tr:hover td {
 }
 
 .ops-glyph.glyph-teal {
-  background: rgba(45, 212, 191, 0.15);
-  color: #2DD4BF;
+  background: rgba(100, 210, 255, 0.16);
+  color: #64D2FF;
 }
 
 .ops-glyph.glyph-emerald {
@@ -1438,18 +1482,18 @@ tr:hover td {
 }
 
 .ops-glyph.glyph-blue {
-  background: rgba(56, 189, 248, 0.15);
-  color: #38BDF8;
+  background: rgba(10, 132, 255, 0.16);
+  color: #0A84FF;
 }
 
 .ops-glyph.glyph-indigo {
-  background: rgba(167, 139, 250, 0.15);
-  color: #A78BFA;
+  background: rgba(94, 92, 230, 0.18);
+  color: #5E5CE6;
 }
 
 .ops-glyph.glyph-cyan {
-  background: rgba(34, 211, 238, 0.15);
-  color: #22D3EE;
+  background: rgba(112, 215, 255, 0.18);
+  color: #70D7FF;
 }
 
 .ops-glyph.glyph-amber {
@@ -1496,7 +1540,7 @@ tr:hover td {
 .ops-action:hover .ops-chevron {
   opacity: 1;
   transform: translateX(2px);
-  color: var(--color-primary-dark);
+  color: #64D2FF;
 }
 
 /* ================= 7. Floating Modals & Sheets ================= */
@@ -1508,9 +1552,9 @@ tr:hover td {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(3, 10, 12, 0.75);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(0, 0, 0, 0.60);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   animation: iosBackdropFadeIn var(--duration-control) var(--ease-ios);
 }
 
@@ -1524,10 +1568,12 @@ tr:hover td {
   width: min(880px, 100%);
   max-height: min(780px, calc(100vh - 40px));
   overflow: hidden;
-  border-radius: var(--radius-xl);
-  background: var(--color-surface);
-  border: 1px solid var(--separator-medium);
-  box-shadow: var(--shadow-modal);
+  border-radius: 28px;
+  background: rgba(22, 25, 36, 0.88);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.25), 0 28px 72px rgba(0, 0, 0, 0.8), 0 0 36px rgba(10, 132, 255, 0.16);
   animation: iosModalPopIn var(--duration-panel) var(--ease-spring);
 }
 
@@ -1548,9 +1594,9 @@ tr:hover td {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 22px;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--separator-subtle);
+  padding: 16px 24px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-primary);
 }
 
@@ -1573,27 +1619,25 @@ tr:hover td {
 .metric-modal header button,
 .ops-panel-head button[data-close-modal],
 .ops-panel-head button {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   border: none;
   border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, 0.08);
-  color: var(--text-secondary);
-  font-size: 17px;
+  color: rgba(235, 235, 245, 0.70);
+  font-size: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: transform var(--duration-micro) var(--ease-ios),
-              background-color var(--duration-control) var(--ease-ios),
-              color var(--duration-control) var(--ease-ios);
+  transition: all var(--duration-fast) var(--ease-ios);
 }
 
 .metric-modal header button:hover,
 .ops-panel-head button:hover {
-  background: rgba(255, 255, 255, 0.16);
-  color: var(--text-primary);
-  transform: scale(1.06);
+  background: rgba(255, 255, 255, 0.18);
+  color: #FFFFFF;
+  transform: scale(1.05);
 }
 
 .modal-table-wrap {
@@ -1622,10 +1666,10 @@ tr:hover td {
 .ops-input,
 .ops-textarea {
   width: 100%;
-  border: 1px solid var(--separator-medium);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: var(--radius-md);
-  background: var(--color-surface-secondary);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  color: #FFFFFF;
   font-family: inherit;
   font-size: 13.5px;
   transition: border-color var(--duration-control) var(--ease-ios),
@@ -1646,8 +1690,8 @@ tr:hover td {
 .ops-input:focus,
 .ops-textarea:focus {
   outline: none;
-  border-color: var(--color-accent);
-  box-shadow: var(--focus-ring);
+  border-color: #0A84FF;
+  box-shadow: 0 0 0 3.5px rgba(10, 132, 255, 0.35);
 }
 
 /* ================= 8. Analytics Hub & Streamlined Navigation ================= */
@@ -1662,8 +1706,8 @@ tr:hover td {
   align-items: center;
   gap: 6px;
   padding: 12px 20px;
-  background: var(--color-surface-secondary);
-  border-bottom: 1px solid var(--separator-subtle);
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .analytics-tab-btn {
@@ -1671,7 +1715,7 @@ tr:hover td {
   border: none;
   border-radius: var(--radius-pill);
   background: transparent;
-  color: var(--text-secondary);
+  color: rgba(235, 235, 245, 0.70);
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -1682,15 +1726,15 @@ tr:hover td {
 }
 
 .analytics-tab-btn:hover {
-  background: var(--color-surface-tertiary);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+  color: #FFFFFF;
 }
 
 .analytics-tab-btn.active {
-  background: var(--color-accent);
-  color: var(--text-on-primary);
+  background: linear-gradient(135deg, #0A84FF 0%, #0066D6 100%);
+  color: #FFFFFF;
   font-weight: 700;
-  box-shadow: var(--shadow-primary-btn);
+  box-shadow: 0 4px 16px rgba(10, 132, 255, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 /* --- iOS Segmented Period Switcher --- */
@@ -1703,12 +1747,15 @@ tr:hover td {
 .ios-segmented-control {
   display: inline-flex;
   align-items: center;
-  background: var(--color-surface-secondary);
-  padding: 4px;
+  background: rgba(118, 118, 128, 0.24);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 3px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--separator-subtle);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.25);
   position: relative;
-  gap: 3px;
+  gap: 2px;
 }
 
 .ios-segment-btn {
@@ -1717,8 +1764,8 @@ tr:hover td {
   padding: 6px 18px;
   border-radius: var(--radius-pill);
   font-family: inherit;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--duration-control) var(--ease-ios);
@@ -1727,14 +1774,14 @@ tr:hover td {
 
 .ios-segment-btn:hover:not(.active) {
   color: var(--text-primary);
-  background: rgba(45, 212, 191, 0.08);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .ios-segment-btn.active {
-  background: var(--color-surface-tertiary);
-  color: var(--color-primary-dark);
-  font-weight: 700;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  background: rgba(255, 255, 255, 0.95);
+  color: #000000;
+  font-weight: 600;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.32), 0 1px 2px rgba(0, 0, 0, 0.16);
 }
 
 .performance-view-body {
@@ -1754,11 +1801,13 @@ tr:hover td {
   flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 18px;
-  padding: 12px 18px;
+  padding: 14px 20px;
   border-radius: var(--radius-lg);
-  background: var(--color-surface);
+  background: var(--color-surface-glass);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
   border: 1px solid var(--separator-subtle);
-  box-shadow: var(--shadow-subtle);
+  box-shadow: var(--shadow-card), var(--shadow-specular);
 }
 
 .analytics-period-selector {
@@ -1789,8 +1838,10 @@ tr:hover td {
   padding: 16px 20px;
   border-radius: var(--radius-lg);
   background: var(--color-surface);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
   border: 1px solid var(--separator-subtle);
-  box-shadow: var(--shadow-subtle);
+  box-shadow: var(--shadow-subtle), var(--shadow-specular);
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -1801,8 +1852,8 @@ tr:hover td {
 
 .analytics-kpi-card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-card);
-  border-color: var(--color-primary-tint-border);
+  box-shadow: var(--shadow-card), var(--shadow-specular);
+  border-color: rgba(10, 132, 255, 0.35);
 }
 
 .analytics-kpi-card span {
@@ -1810,7 +1861,7 @@ tr:hover td {
   color: var(--text-tertiary);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
 }
 
 .analytics-kpi-card strong {
@@ -1821,12 +1872,13 @@ tr:hover td {
 }
 
 .analytics-kpi-card.highlight {
-  background: var(--color-surface-secondary);
-  border-color: var(--color-primary-tint-border);
+  background: rgba(10, 132, 255, 0.10);
+  border-color: rgba(10, 132, 255, 0.35);
+  box-shadow: 0 0 24px rgba(10, 132, 255, 0.18), var(--shadow-specular);
 }
 
 .analytics-kpi-card.highlight strong {
-  color: var(--color-primary-dark);
+  color: var(--ios-blue);
 }
 
 .analytics-delta-badge {
@@ -1836,23 +1888,25 @@ tr:hover td {
   font-size: 11.5px;
   font-weight: 700;
   padding: 2px 7px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-pill);
   width: max-content;
   margin-top: 3px;
 }
 
 .analytics-delta-badge.positive {
-  background: var(--color-primary-tint);
-  color: var(--color-primary-dark);
+  background: var(--color-success-tint);
+  color: var(--color-success);
+  border: 1px solid var(--color-success-tint-border);
 }
 
 .analytics-delta-badge.negative {
   background: var(--color-danger-tint);
   color: var(--color-danger);
+  border: 1px solid var(--color-danger-tint-border);
 }
 
 .analytics-delta-badge.neutral {
-  background: rgba(45, 212, 191, 0.08);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--text-tertiary);
 }
 
@@ -1865,15 +1919,17 @@ tr:hover td {
 
 .analytics-card {
   border: 1px solid var(--separator-subtle);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--color-surface);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
   overflow: hidden;
-  box-shadow: var(--shadow-subtle);
+  box-shadow: var(--shadow-subtle), var(--shadow-specular);
   transition: box-shadow var(--duration-panel) var(--ease-ios);
 }
 
 .analytics-card:hover {
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-card), var(--shadow-specular);
 }
 
 .analytics-card header {
@@ -1881,7 +1937,7 @@ tr:hover td {
   align-items: center;
   justify-content: space-between;
   padding: 14px 18px;
-  background: var(--color-surface-secondary);
+  background: rgba(255, 255, 255, 0.03);
   border-bottom: 1px solid var(--separator-subtle);
 }
 
@@ -1889,6 +1945,7 @@ tr:hover td {
   color: var(--text-primary);
   font-size: 14px;
   font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
 .analytics-card header span {
@@ -1918,16 +1975,17 @@ tr:hover td {
 .channel-bar-wrap {
   flex: 1;
   height: 8px;
-  background: rgba(45, 212, 191, 0.12);
+  background: rgba(255, 255, 255, 0.08);
   border-radius: var(--radius-pill);
   overflow: hidden;
 }
 
 .channel-bar-fill {
   height: 100%;
-  background: var(--color-primary);
+  background: linear-gradient(90deg, var(--ios-teal) 0%, var(--ios-blue) 100%);
   border-radius: var(--radius-pill);
   transition: width 0.4s var(--ease-ios);
+  box-shadow: 0 0 10px rgba(10, 132, 255, 0.4);
 }
 
 .channel-bar-count {
@@ -1941,17 +1999,19 @@ tr:hover td {
 /* ================= 9. AI Performance Brief Container ================= */
 .ai-summary-box {
   border: 1px solid var(--separator-subtle);
-  border-left: 4px solid var(--color-primary);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-secondary);
+  border-left: 4px solid var(--ios-blue);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-glass);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
   padding: 20px 24px;
   margin-bottom: 18px;
-  box-shadow: var(--shadow-subtle);
+  box-shadow: var(--shadow-subtle), var(--shadow-specular);
   transition: box-shadow var(--duration-panel) var(--ease-ios);
 }
 
 .ai-summary-box:hover {
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-card), var(--shadow-specular);
 }
 
 .ai-summary-header {
@@ -1976,10 +2036,11 @@ tr:hover td {
 .ai-summary-badge {
   display: inline-flex;
   align-items: center;
-  padding: 3px 9px;
+  padding: 3px 10px;
   border-radius: var(--radius-pill);
-  background: var(--color-primary-tint);
-  color: var(--color-primary-dark);
+  background: rgba(10, 132, 255, 0.16);
+  color: var(--ios-blue);
+  border: 1px solid rgba(10, 132, 255, 0.3);
   font-size: 11px;
   font-weight: 700;
 }
@@ -1998,7 +2059,7 @@ tr:hover td {
   font-weight: 700;
   color: var(--text-primary);
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
 }
 
 .ai-summary-section p,
@@ -2024,11 +2085,14 @@ tr:hover td {
   flex-wrap: wrap;
   gap: 8px;
   padding: 12px 16px;
-  background: var(--color-surface-secondary);
+  background: var(--color-surface);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
   border: 1px solid var(--separator-subtle);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   margin-bottom: 16px;
   align-items: center;
+  box-shadow: var(--shadow-subtle), var(--shadow-specular);
 }
 
 .intel-filter-bar input.ops-input {
@@ -2104,6 +2168,8 @@ tr:hover td {
   border: 1px solid var(--separator-subtle);
   border-radius: var(--radius-md);
   background: var(--color-surface-secondary);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   text-align: left;
   font: inherit;
   color: inherit;
@@ -2135,7 +2201,7 @@ tr:hover td {
 .library-status-pill {
   display: inline-flex;
   align-items: center;
-  padding: 1.5px 6px;
+  padding: 1.5px 7px;
   border-radius: var(--radius-pill);
   font-size: 9.5px;
   font-weight: 700;
@@ -2151,13 +2217,13 @@ tr:hover td {
 
 .library-status-pill.compact {
   background: var(--color-primary-tint);
-  color: var(--color-primary);
-  border: 1px solid var(--color-primary-tint-border);
+  color: var(--ios-blue);
+  border: 1px solid rgba(10, 132, 255, 0.28);
 }
 
 .worksheet-day-card.has-data {
   cursor: pointer;
-  border-color: var(--color-primary-tint-border);
+  border-color: rgba(10, 132, 255, 0.25);
   background: var(--color-surface);
 }
 
@@ -2167,7 +2233,7 @@ tr:hover td {
 }
 
 .worksheet-day-card.has-data:hover {
-  border-color: var(--color-accent);
+  border-color: var(--ios-blue);
   transform: translateY(-2px);
   box-shadow: var(--shadow-card);
 }
@@ -2204,11 +2270,11 @@ tr:hover td {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 12px;
-  border: 1px solid var(--color-border);
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: var(--radius-pill);
-  background: var(--color-surface-secondary);
-  color: var(--color-primary-dark);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ios-blue);
   font-family: inherit;
   font-size: 12px;
   font-weight: 600;
@@ -2217,9 +2283,9 @@ tr:hover td {
 }
 
 .assign-add-btn:hover {
-  background: var(--color-primary-tint);
-  border-color: var(--color-primary-tint-border);
-  color: var(--color-primary);
+  background: rgba(10, 132, 255, 0.16);
+  border-color: rgba(10, 132, 255, 0.35);
+  color: #ffffff;
 }
 
 .assign-add-btn:active {
@@ -2235,14 +2301,16 @@ tr:hover td {
 
 .watch-card {
   padding: 12px 14px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--separator-subtle);
   border-radius: var(--radius-md);
-  background: var(--color-surface-secondary);
-  box-shadow: var(--shadow-subtle);
+  background: var(--color-surface);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-subtle), var(--shadow-specular);
 }
 
 .watch-card:hover {
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-card), var(--shadow-specular);
 }
 
 .watch-card-top {
@@ -2262,12 +2330,13 @@ tr:hover td {
 }
 
 .watch-status-active {
-  background: var(--color-primary-tint);
-  color: var(--color-primary-dark);
+  background: rgba(10, 132, 255, 0.16);
+  color: var(--ios-blue);
+  border: 1px solid rgba(10, 132, 255, 0.28);
 }
 
 .watch-status-resolved {
-  background: rgba(45, 212, 191, 0.08);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--text-tertiary);
 }
 
@@ -2278,18 +2347,21 @@ tr:hover td {
 }
 
 .guidance-card {
-  padding: 12px 16px;
+  padding: 14px 16px;
   border: 1px solid var(--separator-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-surface-secondary);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  box-shadow: var(--shadow-subtle), var(--shadow-specular);
   transition: box-shadow var(--duration-panel) var(--ease-ios),
               border-color var(--duration-panel) var(--ease-ios);
 }
 
 .guidance-card:hover {
-  border-color: var(--color-primary-tint-border);
-  background: var(--color-surface-tertiary);
-  box-shadow: var(--shadow-subtle);
+  border-color: rgba(10, 132, 255, 0.35);
+  background: var(--color-surface-secondary);
+  box-shadow: var(--shadow-card), var(--shadow-specular);
 }
 
 .guidance-card strong {
@@ -2351,8 +2423,8 @@ tr:hover td {
 }
 
 .status-dot-active {
-  background: var(--color-primary);
-  box-shadow: 0 0 5px rgba(45, 212, 191, 0.6);
+  background: var(--ios-green);
+  box-shadow: 0 0 8px rgba(48, 209, 88, 0.7);
 }
 
 .status-dot-inactive {
@@ -2371,8 +2443,10 @@ tr:hover td {
   padding: 16px 20px;
   border-radius: var(--radius-lg);
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  box-shadow: var(--shadow-subtle);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border: 1px solid var(--separator-subtle);
+  box-shadow: var(--shadow-subtle), var(--shadow-specular);
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -2382,15 +2456,15 @@ tr:hover td {
 
 .performer-card:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--shadow-card), var(--shadow-specular);
 }
 
 .performer-card.top-performer {
-  border-top: 3px solid var(--color-primary);
+  border-top: 3px solid var(--ios-blue);
 }
 
 .performer-card.weak-performer {
-  border-top: 3px solid var(--color-danger);
+  border-top: 3px solid var(--ios-red);
 }
 
 .performer-badge {
@@ -2407,12 +2481,14 @@ tr:hover td {
 
 .performer-badge.top {
   background: var(--color-primary-tint);
-  color: var(--color-primary-dark);
+  color: var(--ios-blue);
+  border: 1px solid rgba(10, 132, 255, 0.28);
 }
 
 .performer-badge.weak {
   background: var(--color-danger-tint);
-  color: var(--color-danger);
+  color: var(--ios-red);
+  border: 1px solid var(--color-danger-tint-border);
 }
 
 .performer-name {
@@ -2450,10 +2526,10 @@ tr:hover td {
 }
 
 .performer-ai {
-  padding: 8px 12px;
-  background: var(--color-surface-secondary);
+  padding: 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--separator-subtle);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   font-size: 12px;
   line-height: 1.45;
   color: var(--text-secondary);
@@ -2473,22 +2549,25 @@ tr:hover td {
 
 .systemic-miss-card {
   border: 1px solid var(--separator-subtle);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: 14px 18px;
-  background: var(--color-surface-secondary);
+  background: var(--color-surface);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  box-shadow: var(--shadow-subtle), var(--shadow-specular);
   transition: box-shadow var(--duration-panel) var(--ease-ios),
               border-color var(--duration-panel) var(--ease-ios);
 }
 
 .systemic-miss-card:hover {
-  border-color: var(--color-primary-tint-border);
-  box-shadow: var(--shadow-subtle);
+  border-color: rgba(10, 132, 255, 0.35);
+  box-shadow: var(--shadow-card), var(--shadow-specular);
 }
 
 .systemic-miss-card.expanded {
-  background: var(--color-surface-tertiary);
-  border-color: var(--color-primary);
-  box-shadow: var(--shadow-card);
+  background: var(--color-surface-secondary);
+  border-color: var(--ios-blue);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), var(--shadow-specular);
 }
 
 .systemic-miss-head {
@@ -2529,7 +2608,8 @@ tr:hover td {
   padding: 2px 7px;
   border-radius: var(--radius-pill);
   background: var(--color-danger-tint);
-  color: var(--color-danger);
+  color: var(--ios-red);
+  border: 1px solid var(--color-danger-tint-border);
   font-size: 11px;
   font-weight: 700;
 }
@@ -2537,7 +2617,8 @@ tr:hover td {
 .systemic-ai-box {
   margin-top: 8px;
   padding: 8px 12px;
-  background: rgba(20, 184, 166, 0.08);
+  background: rgba(10, 132, 255, 0.08);
+  border: 1px solid rgba(10, 132, 255, 0.2);
   border-radius: var(--radius-sm);
   font-size: 12.5px;
   line-height: 1.45;
@@ -2545,14 +2626,14 @@ tr:hover td {
 }
 
 .systemic-ai-box strong {
-  color: var(--color-primary-dark);
+  color: var(--ios-blue);
 }
 
 .systemic-sop-box {
   margin-top: 6px;
   padding: 8px 12px;
-  background: var(--color-surface-tertiary);
-  border: 1px solid var(--color-border);
+  background: rgba(255, 69, 58, 0.08);
+  border: 1px solid rgba(255, 69, 58, 0.22);
   border-radius: var(--radius-sm);
   font-size: 12.5px;
   line-height: 1.45;
@@ -2560,7 +2641,7 @@ tr:hover td {
 }
 
 .systemic-sop-box strong {
-  color: var(--color-danger);
+  color: var(--ios-red);
 }
 
 .systemic-drilldown-panel {
@@ -2648,10 +2729,12 @@ tr:hover td {
 
 .ticket-chip-card {
   padding: 8px 12px;
-  background: var(--color-surface-tertiary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-subtle);
+  background: var(--color-surface);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--separator-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-subtle), var(--shadow-specular);
 }
 
 .chip-top {
@@ -2683,28 +2766,29 @@ tr:hover td {
 
 .period-type-select {
   height: 32px;
-  padding: 4px 10px;
+  padding: 4px 12px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
-  background: var(--color-surface-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-pill);
   cursor: pointer;
   outline: none;
-  transition: border-color var(--duration-control) var(--ease-ios);
+  transition: all var(--duration-control) var(--ease-ios);
 }
 
 .period-type-select:focus {
-  border-color: var(--color-primary);
+  border-color: var(--ios-blue);
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.25);
 }
 
 .period-stepper {
   display: inline-flex;
   align-items: center;
-  background: var(--color-surface-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius-pill);
   overflow: hidden;
 }
 
@@ -2719,8 +2803,8 @@ tr:hover td {
 }
 
 .period-stepper-btn:hover {
-  background: var(--color-surface-tertiary);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
 }
 
 .period-stepper-label {
@@ -2728,8 +2812,8 @@ tr:hover td {
   font-size: 13px;
   font-weight: 700;
   color: var(--text-primary);
-  border-left: 1px solid var(--color-border);
-  border-right: 1px solid var(--color-border);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
   user-select: none;
 }
 
@@ -2738,12 +2822,12 @@ tr:hover td {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 8px;
+  padding: 3px 9px;
   border-radius: var(--radius-pill);
   font-size: 11.5px;
   font-weight: 700;
   background: var(--color-danger-tint);
-  color: var(--color-danger);
+  color: var(--ios-red);
   border: 1px solid var(--color-danger-tint-border);
   cursor: pointer;
   transition: transform var(--duration-control) var(--ease-spring),
@@ -2752,11 +2836,11 @@ tr:hover td {
 
 .high-impact-badge-btn:hover {
   transform: scale(1.04);
-  background: var(--color-danger-tint-border);
+  background: rgba(255, 69, 58, 0.24);
 }
 
 .high-impact-badge-btn.none {
-  background: var(--color-surface-secondary);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text-tertiary);
   border-color: var(--separator-subtle);
   cursor: default;
@@ -2764,7 +2848,7 @@ tr:hover td {
 
 .high-impact-badge-btn.none:hover {
   transform: none;
-  background: var(--color-surface-secondary);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 /* Requirement Miss Interactive Chips */
@@ -2779,9 +2863,9 @@ tr:hover td {
   align-items: center;
   gap: 4px;
   padding: 3px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   background: var(--color-danger-tint);
-  color: var(--color-danger);
+  color: var(--ios-red);
   border: 1px solid var(--color-danger-tint-border);
   font-size: 11px;
   font-weight: 600;
@@ -2791,7 +2875,7 @@ tr:hover td {
 }
 
 .req-miss-chip:hover {
-  background: rgba(214, 69, 69, 0.16);
+  background: rgba(255, 69, 58, 0.22);
   transform: translateY(-1px);
 }
 
@@ -2805,9 +2889,9 @@ tr:hover td {
 .ticket-popover-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   z-index: 10000;
   display: flex;
   align-items: center;
@@ -2817,12 +2901,14 @@ tr:hover td {
 }
 
 .ticket-popover-card {
-  width: min(100%, 420px);
+  width: min(100%, 440px);
   max-height: 80vh;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-modal);
+  background: var(--color-surface-glass);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border: 1px solid var(--separator-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 28px 64px rgba(0, 0, 0, 0.65), var(--shadow-specular);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3098,9 +3184,11 @@ tr:hover td {
   width: min(780px, 94vw) !important;
   max-height: min(680px, 86vh) !important;
   border-radius: var(--radius-xl) !important;
-  background: var(--color-surface) !important;
-  border: 1px solid var(--color-border) !important;
-  box-shadow: 0 24px 56px rgba(0, 0, 0, 0.6), 0 0 32px rgba(20, 184, 166, 0.15) !important;
+  background: var(--color-surface-glass) !important;
+  backdrop-filter: blur(40px) saturate(200%) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(200%) !important;
+  border: 1px solid var(--separator-subtle) !important;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.7), 0 0 32px rgba(10, 132, 255, 0.12), var(--shadow-specular) !important;
   display: flex !important;
   flex-direction: column !important;
   overflow: hidden !important;
@@ -3112,7 +3200,7 @@ tr:hover td {
   justify-content: space-between !important;
   gap: 14px !important;
   padding: 18px 24px 14px !important;
-  background: var(--color-surface) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
   border-bottom: 1px solid var(--separator-subtle) !important;
 }
 
@@ -3133,24 +3221,24 @@ tr:hover td {
   font-size: 18px;
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .ios-modal-badge.tone-primary {
-  background: var(--color-primary-tint);
-  color: var(--color-primary-dark);
-  border: 1px solid var(--color-primary-tint-border);
+  background: rgba(10, 132, 255, 0.16);
+  color: var(--ios-blue);
+  border: 1px solid rgba(10, 132, 255, 0.3);
 }
 
 .ios-modal-badge.tone-danger {
   background: var(--color-danger-tint);
-  color: var(--color-danger);
+  color: var(--ios-red);
   border: 1px solid var(--color-danger-tint-border);
 }
 
 .ios-modal-badge.tone-warning {
   background: var(--color-warning-tint);
-  color: var(--color-warning);
+  color: var(--ios-orange);
   border: 1px solid var(--color-warning-tint-border);
 }
 
@@ -3183,17 +3271,17 @@ tr:hover td {
   font-size: 12px;
   font-weight: 600;
   border-radius: var(--radius-pill);
-  background: var(--color-surface-secondary);
-  border: 1px solid var(--separator-medium);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   color: var(--text-primary);
   cursor: pointer;
   transition: all var(--duration-fast) var(--ease-ios);
 }
 
 .ios-pill-btn:hover {
-  background: var(--color-primary-tint);
-  border-color: var(--color-primary-tint-border);
-  color: var(--color-primary-dark);
+  background: rgba(10, 132, 255, 0.18);
+  border-color: rgba(10, 132, 255, 0.35);
+  color: #ffffff;
 }
 
 .ios-pill-btn:active {
@@ -3205,7 +3293,7 @@ tr:hover td {
   height: 32px;
   border-radius: var(--radius-pill);
   border: none;
-  background: rgba(45, 212, 191, 0.1);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--text-secondary);
   font-size: 18px;
   display: flex;
@@ -3216,8 +3304,8 @@ tr:hover td {
 }
 
 .ios-close-btn:hover {
-  background: rgba(45, 212, 191, 0.2);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
   transform: scale(1.05);
 }
 
@@ -3226,7 +3314,7 @@ tr:hover td {
   align-items: center;
   position: relative;
   padding: 10px 24px;
-  background: var(--color-surface-secondary);
+  background: rgba(255, 255, 255, 0.02);
   border-bottom: 1px solid var(--separator-subtle);
 }
 
@@ -3243,9 +3331,9 @@ tr:hover td {
   padding: 8px 14px 8px 34px;
   font-size: 13px;
   font-family: inherit;
-  background: var(--color-surface-tertiary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-pill);
   color: var(--text-primary);
   transition: border-color var(--duration-control) var(--ease-ios),
               box-shadow var(--duration-control) var(--ease-ios);
@@ -3253,8 +3341,8 @@ tr:hover td {
 
 .ios-search-input:focus {
   outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.25);
+  border-color: var(--ios-blue);
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.25);
 }
 
 .ios-modal-content-wrap {
@@ -3277,16 +3365,19 @@ tr:hover td {
   gap: 16px;
   padding: 12px 16px;
   background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--separator-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-subtle), var(--shadow-specular);
   transition: all var(--duration-micro) var(--ease-ios);
 }
 
 .ios-ticket-row:hover {
   background: var(--color-surface-secondary);
-  border-color: var(--color-primary-tint-border);
+  border-color: rgba(10, 132, 255, 0.35);
   transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35), var(--shadow-specular);
 }
 
 .ios-ticket-row-left {
@@ -3307,19 +3398,20 @@ tr:hover td {
   font-size: 13.5px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: var(--color-primary-dark);
+  color: var(--ios-blue);
   text-decoration: none;
-  padding: 4px 8px;
-  background: var(--color-primary-tint);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--color-primary-tint-border);
+  padding: 4px 10px;
+  background: rgba(10, 132, 255, 0.14);
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(10, 132, 255, 0.28);
   transition: all var(--duration-fast) var(--ease-ios);
 }
 
 .ios-ticket-id-wrap .ticket-link:hover {
-  background: var(--color-primary);
-  color: var(--text-on-primary);
-  border-color: var(--color-primary);
+  background: var(--ios-blue);
+  color: #ffffff;
+  border-color: var(--ios-blue);
+  box-shadow: 0 0 12px rgba(10, 132, 255, 0.4);
 }
 
 .ios-ticket-details {
@@ -3364,21 +3456,21 @@ tr:hover td {
 
 .ios-channel-badge.chat,
 .ios-channel-badge.messaging {
-  background: var(--color-success-tint);
-  color: var(--color-success);
-  border: 1px solid var(--color-success-tint-border);
+  background: rgba(48, 209, 88, 0.16);
+  color: var(--ios-green);
+  border: 1px solid rgba(48, 209, 88, 0.3);
 }
 
 .ios-channel-badge.voice {
-  background: rgba(45, 212, 191, 0.12);
-  color: #2DD4BF;
-  border: 1px solid rgba(45, 212, 191, 0.28);
+  background: rgba(100, 210, 255, 0.16);
+  color: var(--ios-teal);
+  border: 1px solid rgba(100, 210, 255, 0.3);
 }
 
 .ios-channel-badge.email {
-  background: rgba(129, 140, 248, 0.15);
-  color: #A5B4FC;
-  border: 1px solid rgba(129, 140, 248, 0.3);
+  background: rgba(191, 90, 242, 0.16);
+  color: var(--ios-purple);
+  border: 1px solid rgba(191, 90, 242, 0.3);
 }
 
 .ios-score-badge {
@@ -3386,9 +3478,9 @@ tr:hover td {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
-  background: var(--color-surface-tertiary);
+  background: rgba(255, 255, 255, 0.08);
   padding: 3px 8px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-pill);
   border: 1px solid var(--separator-subtle);
 }
 
@@ -3450,9 +3542,11 @@ tr:hover td {
 .icon-btn {
   width: 36px;
   height: 36px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--separator-medium);
-  background: var(--color-surface);
+  border-radius: var(--radius-pill);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   color: var(--text-secondary);
   display: inline-flex;
   align-items: center;
@@ -3460,13 +3554,15 @@ tr:hover td {
   cursor: pointer;
   padding: 0;
   transition: all 160ms var(--ease-ios);
+  box-shadow: var(--shadow-subtle), var(--shadow-specular);
 }
 
 .icon-btn:hover {
-  background: var(--color-surface-secondary);
-  color: var(--text-primary);
-  border-color: var(--color-primary-tint-border);
+  background: rgba(10, 132, 255, 0.16);
+  color: #ffffff;
+  border-color: rgba(10, 132, 255, 0.35);
   transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(10, 132, 255, 0.25);
 }
 
 .icon-btn:active {
@@ -3490,9 +3586,11 @@ tr:hover td {
   width: 38px;
   height: 38px;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-subtle);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  box-shadow: var(--shadow-subtle), var(--shadow-specular);
   overflow: hidden;
   position: relative;
   box-sizing: border-box;
@@ -3506,10 +3604,10 @@ tr:hover td {
 }
 
 .morph-search-bar:not(.expanded):hover {
-  background: var(--color-surface-secondary);
-  border-color: var(--color-accent);
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(10, 132, 255, 0.45);
   transform: scale(1.04);
-  box-shadow: var(--shadow-card);
+  box-shadow: 0 4px 14px rgba(10, 132, 255, 0.25), var(--shadow-specular);
 }
 
 .morph-search-bar:not(.expanded):active {
@@ -3518,9 +3616,10 @@ tr:hover td {
 
 .morph-search-bar.expanded {
   width: 290px;
-  border-radius: var(--radius-md);
-  border-color: var(--color-accent);
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4), 0 0 0 3px rgba(45, 212, 191, 0.2);
+  border-radius: var(--radius-pill);
+  border-color: var(--ios-blue);
+  background: var(--color-surface-glass);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 0 0 3px rgba(10, 132, 255, 0.25), var(--shadow-specular);
   cursor: default;
 }
 
@@ -3529,7 +3628,7 @@ tr:hover td {
   height: 36px;
   border: none;
   background: transparent;
-  color: var(--color-primary);
+  color: var(--ios-blue);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3540,7 +3639,7 @@ tr:hover td {
 }
 
 .morph-search-icon-btn:hover {
-  color: var(--color-primary-dark);
+  color: #ffffff;
 }
 
 .morph-search-content {
@@ -3585,7 +3684,7 @@ tr:hover td {
   height: 22px;
   border-radius: var(--radius-pill);
   border: none;
-  background: rgba(45, 212, 191, 0.12);
+  background: rgba(255, 255, 255, 0.12);
   color: var(--text-secondary);
   display: inline-flex;
   align-items: center;
@@ -3597,8 +3696,8 @@ tr:hover td {
 }
 
 .morph-search-clear-btn:hover {
-  background: rgba(45, 212, 191, 0.22);
-  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.24);
+  color: #ffffff;
   transform: scale(1.08);
 }
 
@@ -3612,10 +3711,12 @@ tr:hover td {
   top: calc(100% + 8px);
   right: 0;
   width: 320px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--color-border);
+  background: var(--color-surface-glass);
+  backdrop-filter: blur(40px) saturate(200%);
+  -webkit-backdrop-filter: blur(40px) saturate(200%);
+  border: 1px solid var(--separator-subtle);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65), var(--shadow-specular);
   z-index: 30;
   overflow: hidden;
   animation: iosModalPopIn 160ms var(--ease-spring);
@@ -3629,9 +3730,9 @@ tr:hover td {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 14px 6px;
-  background: var(--color-surface-secondary);
-  border-bottom: 1px solid var(--color-border);
+  padding: 10px 16px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--separator-subtle);
 }
 
 .morph-popover-tag {
@@ -3660,9 +3761,9 @@ tr:hover td {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 9px 14px;
+  padding: 10px 16px;
   cursor: pointer;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--separator-subtle);
   transition: background 120ms var(--ease-ios);
 }
 
@@ -3671,7 +3772,7 @@ tr:hover td {
 }
 
 .morph-result-item:hover {
-  background: var(--color-surface-secondary);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .morph-result-main {
@@ -3690,7 +3791,7 @@ tr:hover td {
 .morph-result-id {
   font-size: 13px;
   font-weight: 700;
-  color: var(--color-primary);
+  color: var(--ios-blue);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3714,20 +3815,20 @@ tr:hover td {
 }
 
 .morph-clean-pill {
-  padding: 2px 7px;
+  padding: 2px 8px;
   font-size: 10.5px;
   font-weight: 700;
-  color: var(--color-success);
+  color: var(--ios-green);
   background: var(--color-success-tint);
   border: 1px solid var(--color-success-tint-border);
   border-radius: var(--radius-pill);
 }
 
 .morph-miss-pill {
-  padding: 2px 7px;
+  padding: 2px 8px;
   font-size: 10.5px;
   font-weight: 700;
-  color: var(--color-danger);
+  color: var(--ios-red);
   background: var(--color-danger-tint);
   border: 1px solid var(--color-danger-tint-border);
   border-radius: var(--radius-pill);
@@ -5941,7 +6042,7 @@ function renderWorksheetLibraryPanel() {
 
 function renderStorageHealthSection() {
   const metrics = getStorageUsageMetrics();
-  const statusColor = metrics.isAboveThreshold ? "var(--coral-primary)" : "var(--teal-secondary)";
+  const statusColor = metrics.isAboveThreshold ? "var(--color-danger)" : "var(--color-success)";
   const statusText = metrics.isAboveThreshold ? "Proactive Compaction Recommended (Usage >80%)" : "Optimal (Well within safety budget)";
 
   return `
@@ -5961,7 +6062,7 @@ function renderStorageHealthSection() {
         </button>
       </div>
       <div style="background: var(--color-surface-tertiary); height: 6px; border-radius: 9999px; margin: 12px 0; overflow: hidden;">
-        <div style="width: ${Math.min(100, Math.max(2, metrics.usagePercent))}%; background: ${metrics.usagePercent > 80 ? "var(--gradient-coral-action)" : "var(--teal-secondary)"}; height: 100%; border-radius: 9999px; transition: width 0.3s ease;"></div>
+        <div style="width: ${Math.min(100, Math.max(2, metrics.usagePercent))}%; background: ${metrics.usagePercent > 80 ? "var(--color-danger)" : "linear-gradient(90deg, var(--ios-teal) 0%, var(--ios-blue) 100%)"}; height: 100%; border-radius: 9999px; transition: width 0.3s ease;"></div>
       </div>
       <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-tertiary); flex-wrap: wrap; gap: 6px;">
         <span>Status: <strong style="color: ${statusColor};">${statusText}</strong></span>
