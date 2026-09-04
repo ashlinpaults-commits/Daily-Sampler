@@ -442,8 +442,9 @@ button:active,
 }
 
 .app {
-  width: min(1440px, calc(100% - 40px));
-  margin: 24px auto 60px;
+  width: min(1240px, calc(100% - 48px));
+  margin: 32px auto 80px;
+  box-sizing: border-box;
 }
 
 /* Reduced Motion Support */
@@ -547,29 +548,38 @@ p {
 }
 
 /* ================= 2. Active Sampling Session (Command Center) ================= */
+/* ================= 2. Active Sampling Session (Command Center) ================= */
+.today-card,
+.session-banner,
 .status,
 .summary,
 .controls,
 .auditor-tabs,
 .metrics,
+.results,
 .agent {
-  margin-top: 18px;
+  margin-top: 28px;
+}
+
+#sessionBanner:empty {
+  display: none;
 }
 
 .status {
-  padding: 14px 18px;
+  padding: 18px 24px;
   border: 1px solid var(--color-border);
   background: var(--color-surface);
   backdrop-filter: blur(28px) saturate(190%);
   -webkit-backdrop-filter: blur(28px) saturate(190%);
   border-radius: var(--radius-lg);
   color: var(--text-secondary);
-  font-size: 13.5px;
+  font-size: 14px;
+  line-height: 1.5;
   box-shadow: var(--shadow-subtle);
 }
 
 .today-card {
-  padding: 22px 28px;
+  padding: 28px 32px;
   background: var(--color-surface);
   backdrop-filter: blur(28px) saturate(190%);
   -webkit-backdrop-filter: blur(28px) saturate(190%);
@@ -583,42 +593,37 @@ p {
   box-shadow: var(--shadow-card-hover);
 }
 
-.today-card-body {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  flex-wrap: wrap;
-}
-
+.today-card-content,
 .today-card-info {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-width: 0;
+  align-items: flex-start;
+  max-width: 740px;
+  width: 100%;
 }
 
-.session-badge-row {
+.session-badge-row,
+.session-badge-wrap {
   display: flex;
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-  margin-bottom: 2px;
+  margin-bottom: 12px;
 }
 
 .session-badge {
   display: inline-flex;
   align-items: center;
   width: max-content;
-  padding: 3px 10px;
+  padding: 4px 12px;
   border-radius: var(--radius-pill);
-  background: rgba(21, 97, 109, 0.35);
-  color: var(--papaya-whip);
-  border: 1px solid rgba(21, 97, 109, 0.55);
+  background: var(--color-primary-tint);
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary-tint-border);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 
 .session-day-segmented {
@@ -666,22 +671,29 @@ p {
 }
 
 .session-title {
-  font-size: 20px;
+  display: block;
+  font-size: 24px;
   font-weight: 700;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
+  line-height: 1.25;
+  margin: 0 0 8px 0;
 }
 
 .session-meta {
+  display: block;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.45;
+  margin: 0 0 22px 0;
 }
 
 .today-card-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 /* Primary Action Button (Adaptive Liquid iOS Gradient) */
@@ -689,15 +701,16 @@ p {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
-  padding: 0 20px;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 22px;
   border: none;
   border-radius: var(--radius-pill);
   background: var(--primary-btn-bg);
   color: var(--primary-btn-text);
   font-family: inherit;
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 13.5px;
+  font-weight: 700;
   letter-spacing: -0.01em;
   cursor: pointer;
   box-shadow: var(--shadow-primary-btn);
@@ -723,16 +736,17 @@ p {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 40px;
-  padding: 0 18px;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 20px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-pill);
-  background: var(--color-primary-tint);
+  background: var(--color-surface-secondary);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   color: var(--text-primary);
   font-family: inherit;
-  font-size: 13px;
+  font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
   box-shadow: var(--shadow-subtle);
@@ -744,10 +758,11 @@ p {
 
 .secondary-action:hover,
 .ops-action-inline:hover {
-  background: var(--color-primary-tint-hover);
+  background: var(--color-primary-tint);
   border-color: var(--color-primary-tint-border);
   color: var(--text-primary);
   transform: translateY(-1px);
+  box-shadow: var(--shadow-card);
 }
 
 .secondary-action:active,
@@ -3316,6 +3331,30 @@ tr:hover td {
 }
 
 /* ================= 12. Responsive Layout Audit ================= */
+@media (max-width: 960px) {
+  .app {
+    width: min(1240px, calc(100% - 32px));
+    margin: 24px auto 60px;
+  }
+  .toolbar {
+    padding: 18px 22px;
+  }
+  .today-card {
+    padding: 24px 26px;
+  }
+  .today-card,
+  .session-banner,
+  .status,
+  .summary,
+  .controls,
+  .auditor-tabs,
+  .metrics,
+  .results,
+  .agent {
+    margin-top: 24px;
+  }
+}
+
 @media (max-width: 760px) {
   /* iOS Bottom-Sheet Presentation for Modals on Mobile */
   .modal-backdrop,
@@ -3348,27 +3387,46 @@ tr:hover td {
     display: block;
   }
   .app {
-    width: min(100% - 20px, 1440px);
-    margin: 12px auto;
+    width: min(100% - 24px, 1240px);
+    margin: 16px auto 48px;
   }
   .toolbar {
-    padding: 16px;
+    padding: 16px 18px;
     border-radius: var(--radius-lg);
     flex-direction: column;
     align-items: stretch;
+    gap: 14px;
   }
-  .toolbar,
+  .toolbar-search-section {
+    width: 100%;
+    justify-content: space-between;
+  }
   .agent-header,
-  .controls,
-  .today-card {
+  .controls {
     align-items: stretch;
     flex-direction: column;
   }
-  .today-card-actions {
-    flex-direction: column;
+  .today-card {
+    padding: 20px 18px;
+    border-radius: var(--radius-lg);
   }
-  .today-card-actions button {
-    width: 100%;
+  .today-card-content,
+  .today-card-info {
+    max-width: 100%;
+  }
+  .today-card,
+  .session-banner,
+  .status,
+  .summary,
+  .controls,
+  .auditor-tabs,
+  .metrics,
+  .results,
+  .agent {
+    margin-top: 20px;
+  }
+  .status {
+    padding: 16px 18px;
   }
   .ops-search-row,
   .watch-form,
@@ -3387,6 +3445,18 @@ tr:hover td {
   .segmented {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .today-card-actions {
+    flex-direction: column;
+    width: 100%;
+    gap: 10px;
+  }
+  .today-card-actions button {
+    width: 100%;
+    justify-content: center;
   }
 }
 

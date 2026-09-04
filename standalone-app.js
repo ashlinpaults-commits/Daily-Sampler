@@ -1434,18 +1434,18 @@ function renderTodayCard() {
     }
 
     el.innerHTML = `
-      <div class="today-card-info">
-        <div class="session-badge-wrap">
+      <div class="today-card-content">
+        <div class="session-badge-row">
           <span class="session-badge">Active Sampling Session</span>
           ${daySwitcherHtml}
         </div>
         <strong class="session-title">${escapeHtml(formatWeekdayLabel(currentSamplingDate))} Sample</strong>
         <span class="session-meta">${totalRows.toLocaleString()} tickets analyzed &middot; 4 Auditors &middot; Shared Daily Session</span>
-      </div>
-      <div class="today-card-actions">
-        <button type="button" class="primary-action" data-upload-new>${uploadIcon} <span>Upload New Workbook</span></button>
-        <button type="button" class="secondary-action" data-open-library>${libraryIcon} <span>Worksheet Library</span></button>
-        <button type="button" class="danger-btn-outline small" data-trigger-reset-workbook style="margin-left: 4px;">${resetIcon} <span>Reset Current Workbook</span></button>
+        <div class="today-card-actions">
+          <button type="button" class="primary-action" data-upload-new>${uploadIcon} <span>Upload New Workbook</span></button>
+          <button type="button" class="secondary-action" data-open-library>${libraryIcon} <span>Worksheet Library</span></button>
+          <button type="button" class="danger-btn-outline small" data-trigger-reset-workbook>${resetIcon} <span>Reset Current Workbook</span></button>
+        </div>
       </div>
     `;
     return;
@@ -1453,28 +1453,32 @@ function renderTodayCard() {
 
   if (!manifest) {
     el.innerHTML = `
-      <div class="today-card-info">
-        <span class="session-badge">Sampling Session</span>
+      <div class="today-card-content">
+        <div class="session-badge-row">
+          <span class="session-badge">Sampling Session</span>
+        </div>
         <strong class="session-title">${escapeHtml(formatWeekdayLabel(todaySamplingDate))} Sample</strong>
         <span class="session-meta">No active shared session uploaded for ${escapeHtml(formatWeekdayLabel(todaySamplingDate))} yet. Upload a workbook to start sampling.</span>
-      </div>
-      <div class="today-card-actions">
-        <button type="button" class="primary-action" data-upload-new>${uploadIcon} <span>Upload Worksheet</span></button>
-        <button type="button" class="secondary-action" data-open-library>${libraryIcon} <span>Worksheet Library</span></button>
+        <div class="today-card-actions">
+          <button type="button" class="primary-action" data-upload-new>${uploadIcon} <span>Upload Worksheet</span></button>
+          <button type="button" class="secondary-action" data-open-library>${libraryIcon} <span>Worksheet Library</span></button>
+        </div>
       </div>
     `;
     return;
   }
 
   el.innerHTML = `
-    <div class="today-card-info">
-      <span class="session-badge">Official Record</span>
+    <div class="today-card-content">
+      <div class="session-badge-row">
+        <span class="session-badge">Official Record</span>
+      </div>
       <strong class="session-title">${escapeHtml(formatWeekdayLabel(manifest.samplingDate))} Sample</strong>
       <span class="session-meta">${(manifest.totalWorkbookRows || 0).toLocaleString()} tickets analyzed &middot; ${manifest.sampledTicketCount || 0} sampled picks</span>
-    </div>
-    <div class="today-card-actions">
-      <button type="button" class="primary-action" data-upload-new>${uploadIcon} <span>Upload New Workbook</span></button>
-      <button type="button" class="secondary-action" data-open-library>${libraryIcon} <span>Worksheet Library</span></button>
+      <div class="today-card-actions">
+        <button type="button" class="primary-action" data-upload-new>${uploadIcon} <span>Upload New Workbook</span></button>
+        <button type="button" class="secondary-action" data-open-library>${libraryIcon} <span>Worksheet Library</span></button>
+      </div>
     </div>
   `;
 }
