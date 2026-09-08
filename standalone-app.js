@@ -1568,11 +1568,17 @@ async function openHistoricalWorksheet(samplingDateKey) {
   openHistoricalSampledModal(manifest, dayPicks);
 }
 
+function createModalBackdrop(extraClasses = "") {
+  const modal = document.createElement("div");
+  modal.className = `modal-backdrop${extraClasses ? ` ${extraClasses}` : ""}`;
+  modal.setAttribute("data-theme", getCurrentTheme());
+  return modal;
+}
+
 function openHistoricalSampledModal(manifest, dayPicks) {
   document.querySelector("[data-historical-modal]")?.remove();
   const weekday = formatWeekdayLabel(manifest.samplingDate);
-  const modal = document.createElement("div");
-  modal.className = "modal-backdrop";
+  const modal = createModalBackdrop();
   modal.dataset.historicalModal = "true";
 
   const rows = dayPicks.length
@@ -1635,8 +1641,7 @@ function exitHistoricalView() {
 // and refuses weekend dates outright (non-sampling days).
 function openSamplingDateModal(defaultDateKey) {
   return new Promise((resolve) => {
-    const modal = document.createElement("div");
-    modal.className = "modal-backdrop";
+    const modal = createModalBackdrop();
     modal.dataset.samplingDateModal = "true";
     modal.innerHTML = `
       <section class="metric-modal" role="dialog" aria-modal="true" aria-label="Select Sampling Date">
@@ -1689,8 +1694,7 @@ function openSamplingDateModal(defaultDateKey) {
 // Only shown when a worksheet already exists for the chosen Sampling Date.
 function openWorksheetConflictModal(samplingDateKey) {
   return new Promise((resolve) => {
-    const modal = document.createElement("div");
-    modal.className = "modal-backdrop";
+    const modal = createModalBackdrop();
     modal.dataset.duplicateModal = "true";
     modal.innerHTML = `
       <section class="metric-modal" role="dialog" aria-modal="true" aria-label="Worksheet already exists">
@@ -1994,8 +1998,7 @@ function findExistingAgentName(name) {
 
 function openAddAgentModal() {
   closeAddAgentModal();
-  const modal = document.createElement("div");
-  modal.className = "modal-backdrop";
+  const modal = createModalBackdrop();
   modal.dataset.addAgentModal = "true";
   modal.innerHTML = `
     <section class="metric-modal add-agent-modal" role="dialog" aria-modal="true" aria-label="Add Agent">
@@ -2179,8 +2182,7 @@ function renameAgent(oldName, newName) {
 
 function openRenameAgentModal(agentName) {
   closeRenameAgentModal();
-  const modal = document.createElement("div");
-  modal.className = "modal-backdrop";
+  const modal = createModalBackdrop();
   modal.dataset.renameAgentModal = "true";
   modal.innerHTML = `
     <section class="metric-modal rename-agent-modal" role="dialog" aria-modal="true" aria-label="Rename Agent">
@@ -4072,8 +4074,7 @@ function handleOpsAction(action) {
 function openOpsModal(title, subtitle, bodyHtml, customClass = "") {
   closeOpsModal();
   closeMetricModal();
-  const modal = document.createElement("div");
-  modal.className = "modal-backdrop";
+  const modal = createModalBackdrop();
   modal.dataset.opsModal = "true";
   modal.innerHTML = `
     <section class="metric-modal ops-modal ${escapeHtml(customClass)}" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
@@ -4349,8 +4350,7 @@ function openAiSearchModal(initialQuery = "") {
     watchlist: [],
   };
 
-  const modal = document.createElement("div");
-  modal.className = "modal-backdrop";
+  const modal = createModalBackdrop();
   modal.dataset.opsModal = "true";
   modal.dataset.aiSearchModal = "true";
   modal.innerHTML = `
@@ -6306,10 +6306,11 @@ function renderAiSummaryTabView() {
 function renderTicketPopoverCard() {
   if (!activeTicketPopover) return "";
   const { title, subtitle, tickets } = activeTicketPopover;
+  const currentTheme = getCurrentTheme();
 
   return `
-    <div class="ticket-popover-overlay" data-close-popover-backdrop>
-      <div class="ticket-popover-card" onclick="event.stopPropagation()">
+    <div class="ticket-popover-overlay" data-close-popover-backdrop data-theme="${currentTheme}">
+      <div class="ticket-popover-card" data-theme="${currentTheme}" onclick="event.stopPropagation()">
         <div class="ticket-popover-head">
           <div class="ticket-popover-title-wrap">
             <strong>${escapeHtml(title)}</strong>
@@ -6656,8 +6657,7 @@ function openMetricModal(metricKey) {
   const label = getMetricLabel(metricKey);
   const toneClass = metricKey === "badCsat" || metricKey === "headerIssues" ? "tone-danger" : metricKey === "missingJira" ? "tone-warning" : "tone-primary";
 
-  const modal = document.createElement("div");
-  modal.className = "modal-backdrop";
+  const modal = createModalBackdrop();
   modal.dataset.metricModal = "true";
   modal.innerHTML = `
     <section class="metric-modal ios-modal-card" role="dialog" aria-modal="true" aria-label="${escapeHtml(label)}">
@@ -6705,8 +6705,7 @@ function openTicketTagsModal(ticketId, channel) {
       .find((item) => clean(item.ticketId) === clean(ticketId) && item.channel === channel) || findTicketById(ticketId);
   closeTagsModal();
   const rawTags = ticket?.rawTags || [];
-  const modal = document.createElement("div");
-  modal.className = "modal-backdrop";
+  const modal = createModalBackdrop();
   modal.dataset.tagsModal = "true";
   modal.innerHTML = `
     <section class="metric-modal" role="dialog" aria-modal="true" aria-label="Ticket ${escapeHtml(ticketId || "")} tags">
@@ -7537,7 +7536,7 @@ const opsThemeRowEl = document.querySelector("#opsThemeRow");
 const opsThemeSubtitleEl = document.querySelector("#opsThemeSubtitle");
 
 function getCurrentTheme() {
-  return document.documentElement.getAttribute("data-theme") || localStorage.getItem("sampler-theme") || "dark";
+  return document.documentElement.getAttribute("data-theme") || localStorage.getItem("sampler-theme") || "light";
 }
 
 function applyTheme(theme, persist = true) {
@@ -7546,6 +7545,14 @@ function applyTheme(theme, persist = true) {
   if (persist) {
     localStorage.setItem("sampler-theme", normalized);
   }
+
+  // Synchronize all open modal backdrops and popovers dynamically
+  document.querySelectorAll(".modal-backdrop").forEach((m) => {
+    m.setAttribute("data-theme", normalized);
+  });
+  document.querySelectorAll(".ticket-popover-overlay, .ticket-popover-card, #morphSearchPopover").forEach((el) => {
+    el.setAttribute("data-theme", normalized);
+  });
 
   const isLight = normalized === "light";
   if (themeSwitchBtn) {

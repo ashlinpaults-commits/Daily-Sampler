@@ -25,7 +25,7 @@ async function readJszip() {
 }
 
 const html = `<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -33,7 +33,7 @@ const html = `<!doctype html>
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0Ij4KICA8ZGVmcz4KICAgIDxsaW5lYXJHcmFkaWVudCBpZD0iYmdHcmFkIiB4MT0iMCUiIHkxPSIwJSIgeDI9IjEwMCUiIHkyPSIxMDAlIj4KICAgICAgPHN0b3Agb2Zmc2V0PSIwJSIgc3RvcC1jb2xvcj0iIzBGNEM1QyIvPgogICAgICA8c3RvcCBvZmZzZXQ9IjEwMCUiIHN0b3AtY29sb3I9IiMzQ0IzNzEiLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgICA8bGluZWFyR3JhZGllbnQgaWQ9ImJhZGdlR3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIwJSIgeTI9IjEwMCUiPgogICAgICA8c3RvcCBvZmZzZXQ9IjAlIiBzdG9wLWNvbG9yPSIjRkZGRkZGIi8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iI0U4RjVFOSIvPgogICAgPC9saW5lYXJHcmFkaWVudD4KICAgIDxmaWx0ZXIgaWQ9InNoYWRvdyIgeD0iLTEwJSIgeT0iLTEwJSIgd2lkdGg9IjEyMCUiIGhlaWdodD0iMTIwJSI+CiAgICAgIDxmZURyb3BTaGFkb3cgZHg9IjAiIGR5PSIyIiBzdGREZXZpYXRpb249IjIiIGZsb29kLWNvbG9yPSIjMDAwMDAwIiBmbG9vZC1vcGFjaXR5PSIwLjI1Ii8+CiAgICA8L2ZpbHRlcj4KICA8L2RlZnM+CiAgPHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTQiIGZpbGw9InVybCgjYmdHcmFkKSIvPgogIDxyZWN0IHg9IjEiIHk9IjEiIHdpZHRoPSI2MiIgaGVpZ2h0PSI2MiIgcng9IjEzIiBmaWxsPSJub25lIiBzdHJva2U9InJnYmEoMjU1LDI1NSwyNTUsMC4yNSkiIHN0cm9rZS13aWR0aD0iMS41Ii8+CiAgPHBhdGggZD0iTTE2IDE2IEMxNiAxNCAxNy41IDEyLjUgMTkuNSAxMi41IEwzNi41IDEyLjUgTDQ4IDI0IEw0OCA0OCBDNDggNTAgNDYuNSA1MS41IDQ0LjUgNTEuNSBMMTkuNSA1MS41IEMxNy41IDUxLjUgMTYgNTAgMTYgNDggWiIgZmlsbD0idXJsKCNiYWRnZUdyYWQpIiBmaWx0ZXI9InVybCgjc2hhZG93KSIvPgogIDxwYXRoIGQ9Ik0zNi41IDEyLjUgTDM2LjUgMjIgQzM2LjUgMjMgMzcuNSAyNCAzOC41IDI0IEw0OCAyNCBaIiBmaWxsPSIjQzhFNkM5Ii8+CiAgPHJlY3QgeD0iMjIiIHk9IjI0IiB3aWR0aD0iMTEiIGhlaWdodD0iMyIgcng9IjEuNSIgZmlsbD0iIzBGNEM1QyIgb3BhY2l0eT0iMC43NSIvPgogIDxyZWN0IHg9IjIyIiB5PSIzMCIgd2lkdGg9IjE4IiBoZWlnaHQ9IjMiIHJ4PSIxLjUiIGZpbGw9IiMwRjRDNUMiIG9wYWNpdHk9IjAuNSIvPgogIDxyZWN0IHg9IjIyIiB5PSIzNiIgd2lkdGg9IjE0IiBoZWlnaHQ9IjMiIHJ4PSIxLjUiIGZpbGw9IiMwRjRDNUMiIG9wYWNpdHk9IjAuNSIvPgogIDxjaXJjbGUgY3g9IjQxIiBjeT0iNDEiIHI9IjEyIiBmaWxsPSIjM0NCMzcxIiBzdHJva2U9IiNGRkZGRkYiIHN0cm9rZS13aWR0aD0iMi41IiBmaWx0ZXI9InVybCgjc2hhZG93KSIvPgogIDxwYXRoIGQ9Ik0zNiA0MSBMMzkuNSA0NC41IEw0Ni41IDM3LjUiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI0ZGRkZGRiIgc3Ryb2tlLXdpZHRoPSIyLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgo8L3N2Zz4=" />
     <script>
       (function() {
-        var theme = localStorage.getItem("sampler-theme") || "dark";
+        var theme = localStorage.getItem("sampler-theme") || "light";
         document.documentElement.setAttribute("data-theme", theme);
       })();
     </script>
@@ -135,7 +135,7 @@ ${styles}
         </div>
 
         <div class="toolbar-search-section">
-          <button type="button" class="icon-btn theme-quick-toggle" id="themeQuickToggle" aria-label="Toggle Light and Dark Mode" title="Toggle Light / Dark Mode">
+          <button type="button" class="icon-btn theme-quick-toggle is-light" id="themeQuickToggle" aria-label="Switch to Dark Mode" title="Switch to Dark Mode (Teal Glass)">
             <svg class="app-icon icon-theme-sun" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="5" stroke="currentColor" stroke-width="2"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
             <svg class="app-icon icon-theme-moon" viewBox="0 0 24 24" fill="none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
@@ -205,10 +205,10 @@ ${styles}
             </span>
             <div class="ops-action-text">
               <strong>Appearance</strong>
-              <span id="opsThemeSubtitle">Dark Mode (Teal Glass)</span>
+              <span id="opsThemeSubtitle">Light Mode (Textured Glass)</span>
             </div>
           </div>
-          <button class="ios-theme-switch" id="themeSwitchBtn" type="button" role="switch" aria-checked="false" aria-label="Toggle Light and Dark Mode">
+          <button class="ios-theme-switch active" id="themeSwitchBtn" type="button" role="switch" aria-checked="true" aria-label="Toggle Light and Dark Mode">
             <span class="ios-theme-track">
               <span class="ios-theme-thumb"></span>
             </span>
