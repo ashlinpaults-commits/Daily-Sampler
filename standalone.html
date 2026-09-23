@@ -12153,25 +12153,88 @@ function filterTickets(tickets) {
 }
 
 function copyRow(pick) {
-  const misses = getTicketMisses(pick);
-  const observations = misses.length ? misses.join("; ") : "Clean Pick";
+  const misses = Array.isArray(pick) ? [] : getTicketMisses(pick);
+  const observations = misses.length ? misses.join("; ") : (pick?.samplerTag || pick?.tag || "Clean Pick");
+
+  const rowNumber = pick?.rowNumber || pick?.rowNum || pick?.rawValues?.rowNumber || pick?.rawRow?.rowNumber || 1480;
+
+  let colI = pick?.formulas?.I || pick?.colI || getReservedWorkbookCell(pick, 8);
+  let colJ = pick?.formulas?.J || pick?.colJ || getReservedWorkbookCell(pick, 9);
+  let colK = pick?.formulas?.K || pick?.colK || getReservedWorkbookCell(pick, 10);
+  let colP = pick?.formulas?.P || pick?.colP || getReservedWorkbookCell(pick, 15);
+  let colQ = pick?.formulas?.Q || pick?.colQ || getReservedWorkbookCell(pick, 16);
+
+  if (!colP && rowNumber) colP = `=SUM(N${rowNumber},O${rowNumber})`;
+  if (!colQ && rowNumber) colQ = `=(P${rowNumber})/70`;
+  if (!colI && rowNumber) colI = `=IFERROR(VLOOKUP(E${rowNumber},AgentsRepo!A:F,4,FALSE),"")`;
+  if (!colJ && rowNumber) colJ = `=IFERROR(VLOOKUP(E${rowNumber},AgentsRepo!A:F,5,FALSE),"")`;
+  if (!colK && rowNumber) colK = `=IFERROR(VLOOKUP(E${rowNumber},AgentsRepo!A:G,7,FALSE),"")`;
+
+  if (Array.isArray(pick)) {
+    const row = [...pick];
+    while (row.length < 18) row.push("");
+    row[8] = colI;
+    row[9] = colJ;
+    row[10] = colK;
+    row[11] = ""; // Column L: blank / manual entry
+    row[12] = ""; // Column M: blank / manual entry
+    row[13] = ""; // Column N: blank / manual score entry
+    row[14] = ""; // Column O: blank / manual score entry
+    row[15] = colP;
+    row[16] = colQ;
+    row[17] = observations;
+    return row.slice(0, 18).join("\t");
+  }
+
+  const dateVal = pick.date || getReservedWorkbookCell(pick, 0);
+  const weekVal = pick.week != null && pick.week !== ""
+    ? String(pick.week).replace(/^Week\s+/i, "")
+    : getReservedWorkbookCell(pick, 1) || (dateVal ? getWeekOfYearLabel(dateVal) : "");
+  const monthVal = pick.month || getReservedWorkbookCell(pick, 2) || (dateVal ? getMonthLabel(dateVal) : "");
+  const ticketIdVal = pick.ticketId || getReservedWorkbookCell(pick, 3);
+  const agentVal = pick.agent || getReservedWorkbookCell(pick, 4);
+  const moduleVal = pick.module || getReservedWorkbookCell(pick, 5);
+  const featureVal = pick.feature || getReservedWorkbookCell(pick, 6);
+  const channelVal = pick.channel || getReservedWorkbookCell(pick, 7);
+
   return [
-    pick.date || "",
-    getWeekOfYearLabel(pick.date),
-    getMonthLabel(pick.date),
-    pick.ticketId || "",
-    pick.agent || "",
-    pick.module || "",
-    pick.feature || "",
-    pick.channel || "",
-    observations,
+    dateVal,                            // Column A: Date
+    weekVal,                            // Column B: Week
+    monthVal,                           // Column C: Month
+    ticketIdVal,                        // Column D: Ticket ID
+    agentVal,                           // Column E: Agent
+    moduleVal,                          // Column F: Module
+    featureVal,                         // Column G: Feature
+    channelVal,                         // Column H: Channel
+    colI,                               // Column I: FORMULA (Preserved)
+    colJ,                               // Column J: FORMULA (Preserved)
+    colK,                               // Column K: FORMULA (Preserved)
+    "",                                 // Column L: BLANK / MANUAL ENTRY
+    "",                                 // Column M: BLANK / MANUAL ENTRY
+    "",                                 // Column N: MANUAL SCORE ENTRY (blank on copy)
+    "",                                 // Column O: MANUAL SCORE ENTRY (blank on copy)
+    colP,                               // Column P: FORMULA (Preserved)
+    colQ,                               // Column Q: FORMULA (Preserved)
+    observations,                       // Column R: SAMPLER TAG / MARKER
   ].join("\t");
+}
+
+function getReservedWorkbookCell(pick, colIdx) {
+  if (!pick) return "";
+  if (Array.isArray(pick)) return pick[colIdx] ?? "";
+  if (Array.isArray(pick.rawValues) && pick.rawValues[colIdx] != null && pick.rawValues[colIdx] !== "") {
+    return pick.rawValues[colIdx];
+  }
+  if (Array.isArray(pick.rawRow) && pick.rawRow[colIdx] != null && pick.rawRow[colIdx] !== "") {
+    return pick.rawRow[colIdx];
+  }
+  return "";
 }
 
 function getWeekOfYearLabel(dateText) {
   const dateKey = normalizeDateKey(dateText);
   if (!dateKey) return "";
-  return `Week ${computeQaWeekNumber(dateKey)}`;
+  return String(computeQaWeekNumber(dateKey));
 }
 
 function getMonthLabel(dateText) {
