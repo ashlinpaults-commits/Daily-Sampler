@@ -1535,11 +1535,25 @@ tr:hover td {
 td.empty,
 .empty {
   text-align: center;
-  padding: 20px 16px;
+  padding: 24px 16px;
   color: var(--text-muted);
   font-size: 12.5px;
   font-weight: 450;
   line-height: 1.4;
+}
+
+td.empty::before,
+.empty:not(.small)::before {
+  content: "";
+  display: block;
+  width: 18px;
+  height: 18px;
+  margin: 0 auto 6px;
+  opacity: 0.45;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235C7A80' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='22 12 16 12 14 15 10 15 8 12 2 12'/%3E%3Cpath d='M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z'/%3E%3C/svg%3E");
 }
 
 .empty.small {
@@ -2661,7 +2675,7 @@ input[type="date"].ops-input {
 .analytics-card header strong {
   color: var(--text-primary);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 650;
   letter-spacing: -0.01em;
 }
 
