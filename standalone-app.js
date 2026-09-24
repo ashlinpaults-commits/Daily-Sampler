@@ -6572,8 +6572,8 @@ function renderSummary(sheets) {
       const heading = CHANNEL_SUMMARY_HEADINGS[channel] || channel;
       return `
         <article class="metric">
-          <strong>${escapeHtml(heading)}</strong>
           <span class="summary-count count-pulse">${available}</span>
+          <strong class="metric-label">${escapeHtml(heading)}</strong>
         </article>
       `;
     })
