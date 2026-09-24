@@ -2526,6 +2526,7 @@ const fileInput = document.querySelector("#fileInput");
 const statusEl = document.querySelector("#status");
 const controlsEl = document.querySelector("#controls");
 const copyIdealBtn = document.querySelector("#copyIdeal");
+const copyTagsBtn = document.querySelector("#copyTags");
 const auditorTabsEl = document.querySelector("#auditorTabs");
 const summaryEl = document.querySelector("#summary");
 const metricsEl = document.querySelector("#metrics");
@@ -2539,6 +2540,7 @@ let currentChannel = "All";
 var activeAuditor = localStorage.getItem("preferredAuditor") || "All";
 let expandedAgent = null;
 let copiedTickets = new Set(JSON.parse(localStorage.getItem("copiedTickets") || "[]"));
+let lastCopiedIdealPicks = null;
 let watchlistItems = loadWatchlist();
 let rejectedTickets = new Set(JSON.parse(localStorage.getItem("rejectedTicketsV1") || "[]"));
 let rejectedPatternCounts = JSON.parse(localStorage.getItem("rejectedPatternCountsV1") || "{}");
@@ -2733,15 +2735,32 @@ auditorTabsEl.addEventListener("click", (event) => {
   render();
 });
 
-copyIdealBtn.addEventListener("click", async () => {
-  if (!currentPayload) return;
-  const picks = getActiveAgents()
+function getApplicableIdealPicks() {
+  if (!currentPayload) return [];
+  return getActiveAgents()
     .map((agent) => getDisplayTickets(agent).picks[0])
     .filter(Boolean);
+}
+
+function updateTagsButtonState() {
+  if (!copyTagsBtn) return;
+  const picks = (lastCopiedIdealPicks && lastCopiedIdealPicks.length > 0)
+    ? lastCopiedIdealPicks
+    : getApplicableIdealPicks();
+  copyTagsBtn.disabled = !picks || picks.length === 0;
+  if (copyIdealBtn) {
+    copyIdealBtn.disabled = !getApplicableIdealPicks().length;
+  }
+}
+
+copyIdealBtn.addEventListener("click", async () => {
+  if (!currentPayload) return;
+  const picks = getApplicableIdealPicks();
 
   if (!picks.length) return;
   const rows = picks.map(copyRow);
   await copyText(rows.join("\n"));
+  lastCopiedIdealPicks = [...picks];
   picks.forEach((pick) => {
     const k = getSampleKey(pick.channel, pick.ticketId);
     copiedTickets.add(k);
@@ -2753,7 +2772,22 @@ copyIdealBtn.addEventListener("click", async () => {
   setTimeout(() => {
     copyIdealBtn.textContent = "Copy All Ideal Picks";
   }, 1200);
+  updateTagsButtonState();
   render();
+});
+
+copyTagsBtn?.addEventListener("click", async () => {
+  const picks = (lastCopiedIdealPicks && lastCopiedIdealPicks.length > 0)
+    ? lastCopiedIdealPicks
+    : getApplicableIdealPicks();
+
+  if (!picks.length) return;
+  const tagsText = copySamplerTags(picks);
+  await copyText(tagsText);
+  copyTagsBtn.textContent = "COPIED";
+  setTimeout(() => {
+    copyTagsBtn.textContent = "TAGS";
+  }, 1200);
 });
 
 document.addEventListener("click", async (event) => {
@@ -3125,6 +3159,21 @@ document.addEventListener("click", async (event) => {
     return;
   }
 
+  const copyTagBtn = event.target.closest(".copy-tag-btn");
+  if (copyTagBtn) {
+    const ticketId = copyTagBtn.dataset.ticketId;
+    const channel = copyTagBtn.dataset.channel || "";
+    const pick = findTicketById(ticketId, channel);
+    const tag = copyTagBtn.dataset.tag || getSamplerTag(pick);
+    await copyText(tag);
+    const span = copyTagBtn.querySelector("span");
+    if (span) span.textContent = "COPIED";
+    setTimeout(() => {
+      if (span) span.textContent = "TAGS";
+    }, 1200);
+    return;
+  }
+
   const button = event.target.closest(".copy-btn");
   if (!button) return;
   await copyText(button.dataset.copy);
@@ -3138,9 +3187,10 @@ document.addEventListener("click", async (event) => {
   if (pick) {
     recordSampledTicket(pick);
   }
-  button.textContent = "Copied";
+  const span = button.querySelector("span");
+  if (span) span.textContent = "Copied";
   setTimeout(() => {
-    button.textContent = "Copy";
+    if (span) span.textContent = "Copy";
   }, 1200);
   render();
 });
@@ -4709,8 +4759,8 @@ function openSopModal() {
           <span>Cross out weak suggestions and use Watchlist feedback so recurring misses become easier to spot later.</span>
         </article>
         <article class="guidance-card">
-          <strong>Copy row</strong>
-          <span>The copy output is Date, Week of year, Month, Ticket ID, Agent, Module, Feature, and Support Channel.</span>
+          <strong>Copy row &amp; Tags</strong>
+          <span>Normal copy outputs columns A–H only (Date, Week, Month, Ticket ID, Agent, Module, Feature, Support Channel). The TAGS button copies the Sampler tag/marker into Column R. Columns I–Q remain untouched.</span>
         </article>
       </div>
     `,
@@ -6500,6 +6550,7 @@ function render() {
   renderSummary(currentPayload.sheets);
   renderMetrics(aggregateMetrics(activeTickets));
   renderResults(activeAgents);
+  updateTagsButtonState();
 }
 
 const CHANNEL_SUMMARY_HEADINGS = { Chat: "Chat", Voice: "Calls", Email: "Email" };
@@ -6895,6 +6946,7 @@ function renderPick(pick) {
   const duplicate = hasCopiedTicket(pick.channel, pick.ticketId);
   const rejected = rejectedTickets.has(String(pick.ticketId));
   const copyText = copyRow(pick);
+  const samplerTag = getSamplerTag(pick);
 
   const copyIcon = `<svg class="app-icon icon-copy" viewBox="0 0 24 24" fill="none"><rect width="13" height="13" x="8" y="8" rx="2" ry="2" stroke="currentColor" stroke-width="1.8"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
   const crossIcon = `<svg class="app-icon icon-crossout" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8"/><path d="m5 5 14 14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`;
@@ -6915,7 +6967,10 @@ function renderPick(pick) {
       <td>${escapeHtml(pick.channel || "-")}</td>
       <td class="checks">${renderRequirementChecks(buildRequirementDisplay(pick))}</td>
       <td class="row-actions">
-        <button class="copy-btn" data-ticket-id="${escapeHtml(pick.ticketId || "")}" data-channel="${escapeHtml(pick.channel || "")}" data-copy="${escapeHtml(copyText)}">${copyIcon} <span>Copy</span></button>
+        <div class="row-btn-group">
+          <button class="copy-btn" data-ticket-id="${escapeHtml(pick.ticketId || "")}" data-channel="${escapeHtml(pick.channel || "")}" data-copy="${escapeHtml(copyText)}">${copyIcon} <span>Copy</span></button>
+          <button class="copy-tag-btn" data-ticket-id="${escapeHtml(pick.ticketId || "")}" data-channel="${escapeHtml(pick.channel || "")}" data-tag="${escapeHtml(samplerTag)}" type="button" title="Copy tag to Column R">${tagIcon} <span>TAGS</span></button>
+        </div>
         <button class="reject-btn" data-ticket-id="${escapeHtml(pick.ticketId || "")}" data-channel="${escapeHtml(pick.channel || "")}" type="button">${crossIcon} <span>${rejected ? "Undo" : "Cross out"}</span></button>
       </td>
     </tr>
@@ -7049,49 +7104,20 @@ function filterTickets(tickets) {
 }
 
 function copyRow(pick) {
-  const misses = Array.isArray(pick) ? [] : getTicketMisses(pick);
-  const observations = misses.length ? misses.join("; ") : (pick?.samplerTag || pick?.tag || "Clean Pick");
-
-  const rowNumber = pick?.rowNumber || pick?.rowNum || pick?.rawValues?.rowNumber || pick?.rawRow?.rowNumber || 1480;
-
-  let colI = pick?.formulas?.I || pick?.colI || getReservedWorkbookCell(pick, 8);
-  let colJ = pick?.formulas?.J || pick?.colJ || getReservedWorkbookCell(pick, 9);
-  let colK = pick?.formulas?.K || pick?.colK || getReservedWorkbookCell(pick, 10);
-  let colP = pick?.formulas?.P || pick?.colP || getReservedWorkbookCell(pick, 15);
-  let colQ = pick?.formulas?.Q || pick?.colQ || getReservedWorkbookCell(pick, 16);
-
-  if (!colP && rowNumber) colP = `=SUM(N${rowNumber},O${rowNumber})`;
-  if (!colQ && rowNumber) colQ = `=(P${rowNumber})/70`;
-  if (!colI && rowNumber) colI = `=IFERROR(VLOOKUP(E${rowNumber},AgentsRepo!A:F,4,FALSE),"")`;
-  if (!colJ && rowNumber) colJ = `=IFERROR(VLOOKUP(E${rowNumber},AgentsRepo!A:F,5,FALSE),"")`;
-  if (!colK && rowNumber) colK = `=IFERROR(VLOOKUP(E${rowNumber},AgentsRepo!A:G,7,FALSE),"")`;
-
   if (Array.isArray(pick)) {
-    const row = [...pick];
-    while (row.length < 18) row.push("");
-    row[8] = colI;
-    row[9] = colJ;
-    row[10] = colK;
-    row[11] = ""; // Column L: blank / manual entry
-    row[12] = ""; // Column M: blank / manual entry
-    row[13] = ""; // Column N: blank / manual score entry
-    row[14] = ""; // Column O: blank / manual score entry
-    row[15] = colP;
-    row[16] = colQ;
-    row[17] = observations;
-    return row.slice(0, 18).join("\t");
+    return pick.slice(0, 8).join("\t");
   }
 
-  const dateVal = pick.date || getReservedWorkbookCell(pick, 0);
+  const dateVal = pick.date || getReservedWorkbookCell(pick, 0) || "";
   const weekVal = pick.week != null && pick.week !== ""
     ? String(pick.week).replace(/^Week\s+/i, "")
     : getReservedWorkbookCell(pick, 1) || (dateVal ? getWeekOfYearLabel(dateVal) : "");
   const monthVal = pick.month || getReservedWorkbookCell(pick, 2) || (dateVal ? getMonthLabel(dateVal) : "");
-  const ticketIdVal = pick.ticketId || getReservedWorkbookCell(pick, 3);
-  const agentVal = pick.agent || getReservedWorkbookCell(pick, 4);
-  const moduleVal = pick.module || getReservedWorkbookCell(pick, 5);
-  const featureVal = pick.feature || getReservedWorkbookCell(pick, 6);
-  const channelVal = pick.channel || getReservedWorkbookCell(pick, 7);
+  const ticketIdVal = pick.ticketId || getReservedWorkbookCell(pick, 3) || "";
+  const agentVal = pick.agent || getReservedWorkbookCell(pick, 4) || "";
+  const moduleVal = pick.module || getReservedWorkbookCell(pick, 5) || "";
+  const featureVal = pick.feature || getReservedWorkbookCell(pick, 6) || "";
+  const channelVal = pick.channel || getReservedWorkbookCell(pick, 7) || "";
 
   return [
     dateVal,                            // Column A: Date
@@ -7102,17 +7128,18 @@ function copyRow(pick) {
     moduleVal,                          // Column F: Module
     featureVal,                         // Column G: Feature
     channelVal,                         // Column H: Channel
-    colI,                               // Column I: FORMULA (Preserved)
-    colJ,                               // Column J: FORMULA (Preserved)
-    colK,                               // Column K: FORMULA (Preserved)
-    "",                                 // Column L: BLANK / MANUAL ENTRY
-    "",                                 // Column M: BLANK / MANUAL ENTRY
-    "",                                 // Column N: MANUAL SCORE ENTRY (blank on copy)
-    "",                                 // Column O: MANUAL SCORE ENTRY (blank on copy)
-    colP,                               // Column P: FORMULA (Preserved)
-    colQ,                               // Column Q: FORMULA (Preserved)
-    observations,                       // Column R: SAMPLER TAG / MARKER
   ].join("\t");
+}
+
+function getSamplerTag(pick) {
+  if (!pick) return "";
+  const misses = Array.isArray(pick) ? [] : getTicketMisses(pick);
+  return misses.length ? misses.join("; ") : (pick?.samplerTag || pick?.tag || "Clean Pick");
+}
+
+function copySamplerTags(picks) {
+  if (!Array.isArray(picks) || !picks.length) return "";
+  return picks.map((p) => getSamplerTag(p)).join("\n");
 }
 
 function getReservedWorkbookCell(pick, colIdx) {

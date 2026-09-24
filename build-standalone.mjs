@@ -174,7 +174,10 @@ ${styles}
       </section>
 
       <section class="controls" id="controls" hidden>
-        <button id="copyIdeal" type="button">Copy All Ideal Picks</button>
+        <div class="controls-actions">
+          <button id="copyIdeal" type="button">Copy All Ideal Picks</button>
+          <button id="copyTags" class="tags-action-btn" type="button" disabled>TAGS</button>
+        </div>
         <div class="segmented" aria-label="Filter support channel">
           <button class="active" type="button" data-channel="All">All</button>
           <button type="button" data-channel="Chat">Chat</button>
